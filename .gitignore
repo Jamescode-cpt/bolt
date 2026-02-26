@@ -1,0 +1,37 @@
+# BOLT data (contains conversations, profile, personal data)
+bolt.db
+bolt.db-wal
+bolt.db-shm
+
+# SSL certs (private key!)
+bolt-cert.pem
+bolt-key.pem
+
+# Personal data files
+ssh_hosts.json
+aliases.json
+tasks.json
+timers.json
+reminders.json
+feeds.json
+snippets.json
+notes.json
+calendar.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Environment
+.env
+.env.*
+
+# Backups
+bolt_backups/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

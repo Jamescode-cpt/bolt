@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0a0e1a">
+<title>BOLT</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0a0e1a;
+  --bg-secondary: #111827;
+  --bg-bubble-user: #1e3a5f;
+  --bg-bubble-bot: #1a1f2e;
+  --text: #e2e8f0;
+  --text-dim: #64748b;
+  --blue: #3b82f6;
+  --blue-glow: #60a5fa;
+  --gold: #f59e0b;
+  --red: #ef4444;
+  --green: #22c55e;
+  --border: #1e293b;
+  --radius: 12px;
+}
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
+  overflow: hidden;
+}
+
+/* Layout */
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+/* Header */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  position: relative;
+  z-index: 10;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.bolt-icon {
+  font-size: 20px;
+}
+
+.bolt-title {
+  font-weight: 700;
+  font-size: 18px;
+  background: linear-gradient(135deg, var(--blue-glow), var(--gold));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.mode-badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--border);
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+.mode-badge.companion { color: var(--blue-glow); border: 1px solid var(--blue); }
+.mode-badge.code { color: var(--gold); border: 1px solid var(--gold); }
+.mode-badge.build { color: var(--green); border: 1px solid var(--green); }
+
+.menu-btn {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 22px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: background 0.2s;
+}
+.menu-btn:hover { background: var(--border); color: var(--text); }
+
+/* Chat area */
+.chat {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+}
+
+.msg {
+  max-width: 85%;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  line-height: 1.5;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  animation: fadeIn 0.15s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.msg.user {
+  align-self: flex-end;
+  background: var(--bg-bubble-user);
+  border-bottom-right-radius: 4px;
+}
+
+.msg.assistant {
+  align-self: flex-start;
+  background: var(--bg-bubble-bot);
+  border-bottom-left-radius: 4px;
+}
+
+.msg.system {
+  align-self: center;
+  background: var(--border);
+  color: var(--text-dim);
+  font-size: 13px;
+  max-width: 90%;
+  text-align: center;
+}
+
+/* Markdown rendering */
+.msg pre {
+  background: #0d1117;
+  padding: 10px 12px;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 8px 0;
+  font-size: 13px;
+  line-height: 1.4;
+  border: 1px solid var(--border);
+}
+
+.msg code {
+  font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
+  font-size: 13px;
+}
+
+.msg :not(pre) > code {
+  background: rgba(59, 130, 246, 0.15);
+  padding: 2px 5px;
+  border-radius: 4px;
+}
+
+.msg a {
+  color: var(--blue-glow);
+  text-decoration: none;
+}
+.msg a:hover { text-decoration: underline; }
+
+.msg strong { color: #f1f5f9; }
+
+.msg p { margin: 4px 0; }
+.msg p:first-child { margin-top: 0; }
+.msg p:last-child { margin-bottom: 0; }
+
+/* Typing indicator */
+.typing {
+  display: none;
+  align-self: flex-start;
+  padding: 10px 14px;
+  background: var(--bg-bubble-bot);
+  border-radius: var(--radius);
+  border-bottom-left-radius: 4px;
+}
+
+.typing.active { display: block; }
+
+.typing-dots {
+  display: flex;
+  gap: 4px;
+}
+
+.typing-dots span {
+  width: 7px;
+  height: 7px;
+  background: var(--text-dim);
+  border-radius: 50%;
+  animation: bounce 1.2s infinite;
+}
+.typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes bounce {
+  0%, 60%, 100% { transform: translateY(0); }
+  30% { transform: translateY(-6px); }
+}
+
+/* Input area */
+.input-area {
+  padding: 12px 16px;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.input-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.input-row textarea {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  padding: 10px 14px;
+  font-size: 16px;
+  font-family: inherit;
+  resize: none;
+  max-height: 120px;
+  min-height: 42px;
+  line-height: 1.4;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.input-row textarea:focus { border-color: var(--blue); }
+.input-row textarea::placeholder { color: var(--text-dim); }
+
+.send-btn {
+  background: var(--blue);
+  border: none;
+  border-radius: var(--radius);
+  color: white;
+  width: 42px;
+  height: 42px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.2s, opacity 0.2s;
+}
+.send-btn:hover { background: #2563eb; }
+.send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.send-btn svg { width: 20px; height: 20px; }
+
+.mic-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-dim);
+  width: 42px;
+  height: 42px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.2s;
+}
+.mic-btn:hover { border-color: var(--blue); color: var(--text); }
+.mic-btn.listening {
+  color: var(--red);
+  border-color: var(--red);
+  animation: pulse-mic 1.5s infinite;
+}
+.mic-btn.unsupported { display: none; }
+.mic-btn svg { width: 20px; height: 20px; }
+
+@keyframes pulse-mic {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(239,68,68,0); }
+}
+
+/* Command panel overlay */
+.overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 100;
+  backdrop-filter: blur(4px);
+}
+.overlay.active { display: block; }
+
+.cmd-panel {
+  position: fixed;
+  top: 0;
+  right: -300px;
+  width: 280px;
+  height: 100%;
+  background: var(--bg-secondary);
+  border-left: 1px solid var(--border);
+  z-index: 101;
+  transition: right 0.25s ease;
+  padding: 20px 16px;
+  overflow-y: auto;
+}
+.cmd-panel.active { right: 0; }
+
+.cmd-panel h3 {
+  font-size: 14px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 16px;
+}
+
+.cmd-item {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  text-align: left;
+  color: var(--text);
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  font-family: inherit;
+  transition: background 0.15s;
+  margin-bottom: 2px;
+}
+.cmd-item:hover { background: var(--border); }
+
+.cmd-item .cmd-name {
+  color: var(--gold);
+  font-weight: 600;
+  font-family: monospace;
+}
+.cmd-item .cmd-desc {
+  color: var(--text-dim);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+/* Scrollbar */
+.chat::-webkit-scrollbar { width: 6px; }
+.chat::-webkit-scrollbar-track { background: transparent; }
+.chat::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+.chat::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+/* Empty state */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  color: var(--text-dim);
+  text-align: center;
+  padding: 40px 20px;
+}
+.empty-state .bolt-logo { font-size: 48px; margin-bottom: 16px; }
+.empty-state h2 { color: var(--text); font-size: 20px; margin-bottom: 8px; }
+.empty-state p { font-size: 14px; max-width: 300px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- Header -->
+  <div class="header">
+    <div class="header-left">
+      <span class="bolt-icon">&#9889;</span>
+      <span class="bolt-title">BOLT</span>
+      <span class="mode-badge companion" id="modeBadge">companion</span>
+    </div>
+    <button class="menu-btn" id="menuBtn" aria-label="Menu">&#9776;</button>
+  </div>
+
+  <!-- Chat -->
+  <div class="chat" id="chat">
+    <div class="empty-state" id="emptyState">
+      <div class="bolt-logo">&#9889;</div>
+      <h2>BOLT</h2>
+      <p>Your local AI companion. Type a message to start chatting.</p>
+    </div>
+  </div>
+
+  <!-- Typing indicator -->
+  <div class="typing" id="typing">
+    <div class="typing-dots"><span></span><span></span><span></span></div>
+  </div>
+
+  <!-- Input -->
+  <div class="input-area">
+    <div class="input-row">
+      <textarea id="input" rows="1" placeholder="Message BOLT..." autocomplete="off" autofocus></textarea>
+      <button class="mic-btn" id="micBtn" aria-label="Voice input">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+          <line x1="12" y1="19" x2="12" y2="23"></line>
+          <line x1="8" y1="23" x2="16" y2="23"></line>
+        </svg>
+      </button>
+      <button class="send-btn" id="sendBtn" aria-label="Send">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="22" y1="2" x2="11" y2="13"></line>
+          <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+        </svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Command panel overlay -->
+<div class="overlay" id="overlay"></div>
+<div class="cmd-panel" id="cmdPanel">
+  <h3>Commands</h3>
+  <button class="cmd-item" data-cmd="/companion">
+    <div class="cmd-name">/companion</div>
+    <div class="cmd-desc">Switch to companion mode</div>
+  </button>
+  <button class="cmd-item" data-cmd="/code">
+    <div class="cmd-name">/code</div>
+    <div class="cmd-desc">Switch to code mode (tools enabled)</div>
+  </button>
+  <button class="cmd-item" data-cmd="/build">
+    <div class="cmd-name">/build</div>
+    <div class="cmd-desc">Kick off the build pipeline</div>
+  </button>
+  <button class="cmd-item" data-cmd="/buildstatus">
+    <div class="cmd-name">/buildstatus</div>
+    <div class="cmd-desc">Check build status</div>
+  </button>
+  <button class="cmd-item" data-cmd="/profile">
+    <div class="cmd-name">/profile</div>
+    <div class="cmd-desc">What BOLT knows about you</div>
+  </button>
+  <button class="cmd-item" data-cmd="/forget">
+    <div class="cmd-name">/forget</div>
+    <div class="cmd-desc">Wipe BOLT's memory of you</div>
+  </button>
+  <button class="cmd-item" data-cmd="/status">
+    <div class="cmd-name">/status</div>
+    <div class="cmd-desc">Session info & current task</div>
+  </button>
+  <button class="cmd-item" data-cmd="/timeline">
+    <div class="cmd-name">/timeline</div>
+    <div class="cmd-desc">Activity log</div>
+  </button>
+  <button class="cmd-item" data-cmd="/memory">
+    <div class="cmd-name">/memory</div>
+    <div class="cmd-desc">Conversation memory</div>
+  </button>
+  <button class="cmd-item" data-cmd="/task">
+    <div class="cmd-name">/task</div>
+    <div class="cmd-desc">Show/manage tasks</div>
+  </button>
+  <button class="cmd-item" data-cmd="/tools">
+    <div class="cmd-name">/tools</div>
+    <div class="cmd-desc">List available tools</div>
+  </button>
+  <button class="cmd-item" data-cmd="/clear">
+    <div class="cmd-name">/clear</div>
+    <div class="cmd-desc">New session (profile persists)</div>
+  </button>
+  <button class="cmd-item" data-cmd="/help">
+    <div class="cmd-name">/help</div>
+    <div class="cmd-desc">Show all commands</div>
+  </button>
+</div>
+
+<script>
+(function() {
+  const BOLT_TOKEN = '{{ token }}';
+  const chat = document.getElementById('chat');
+  const input = document.getElementById('input');
+  const sendBtn = document.getElementById('sendBtn');
+  const typing = document.getElementById('typing');
+  const emptyState = document.getElementById('emptyState');
+  const modeBadge = document.getElementById('modeBadge');
+  const menuBtn = document.getElementById('menuBtn');
+  const overlay = document.getElementById('overlay');
+  const cmdPanel = document.getElementById('cmdPanel');
+
+  let sending = false;
+
+  // ─── Markdown rendering ───
+  function renderMarkdown(text) {
+    // 1. Extract code blocks into placeholders (before escaping)
+    var codeBlocks = [];
+    text = text.replace(/```(\w*)\n([\s\S]*?)```/g, function(_, lang, code) {
+      var idx = codeBlocks.length;
+      codeBlocks.push('<pre><code>' + escapeHtml(code.trimEnd()) + '</code></pre>');
+      return '\x00CODEBLOCK' + idx + '\x00';
+    });
+    // 2. Extract inline code into placeholders
+    var inlineCodes = [];
+    text = text.replace(/`([^`]+)`/g, function(_, code) {
+      var idx = inlineCodes.length;
+      inlineCodes.push('<code>' + escapeHtml(code) + '</code>');
+      return '\x00INLINE' + idx + '\x00';
+    });
+    // 3. Escape HTML on remaining text
+    text = escapeHtml(text);
+    // 4. Apply markdown formatting on escaped text
+    // Bold
+    text = text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    // Links (sanitize URL scheme)
+    text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, function(_, label, url) {
+      var trimmed = url.trim().toLowerCase();
+      if (trimmed.startsWith('javascript:') || trimmed.startsWith('data:')) {
+        return label;
+      }
+      return '<a href="' + url + '" target="_blank" rel="noopener">' + label + '</a>';
+    });
+    // Paragraphs (split by double newline)
+    text = text.replace(/\n\n+/g, '</p><p>');
+    // Single newlines to <br>
+    text = text.replace(/\n/g, '<br>');
+    text = '<p>' + text + '</p>';
+    // 5. Restore code blocks and inline code
+    text = text.replace(/\x00CODEBLOCK(\d+)\x00/g, function(_, idx) {
+      return codeBlocks[parseInt(idx, 10)];
+    });
+    text = text.replace(/\x00INLINE(\d+)\x00/g, function(_, idx) {
+      return inlineCodes[parseInt(idx, 10)];
+    });
+    return text;
+  }
+
+  function escapeHtml(str) {
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  // ─── Message helpers ───
+  function addMessage(role, content) {
+    if (emptyState) emptyState.remove();
+    const div = document.createElement('div');
+    div.className = 'msg ' + role;
+    if (role === 'assistant' || role === 'system') {
+      div.innerHTML = renderMarkdown(content);
+    } else {
+      div.textContent = content;
+    }
+    chat.appendChild(div);
+    scrollToBottom();
+    return div;
+  }
+
+  function scrollToBottom() {
+    requestAnimationFrame(() => {
+      chat.scrollTop = chat.scrollHeight;
+    });
+  }
+
+  // ─── Send message ───
+  async function sendMessage() {
+    const msg = input.value.trim();
+    if (!msg || sending) return;
+
+    sending = true;
+    sendBtn.disabled = true;
+    input.value = '';
+    autoGrow();
+
+    addMessage('user', msg);
+    typing.classList.add('active');
+    scrollToBottom();
+
+    try {
+      const resp = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Bolt-Token': BOLT_TOKEN },
+        body: JSON.stringify({ message: msg }),
+      });
+
+      typing.classList.remove('active');
+
+      if (resp.status === 429) {
+        addMessage('system', 'Model is busy, try again in a moment.');
+        return;
+      }
+
+      if (!resp.ok) {
+        addMessage('system', 'Error: ' + resp.statusText);
+        return;
+      }
+
+      // Stream SSE response
+      const bubble = addMessage('assistant', '');
+      let fullText = '';
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop(); // Keep incomplete line in buffer
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const evt = JSON.parse(line.slice(6));
+            if (evt.type === 'chunk') {
+              fullText += evt.content;
+              bubble.innerHTML = renderMarkdown(fullText);
+              scrollToBottom();
+            } else if (evt.type === 'done') {
+              bubble.innerHTML = renderMarkdown(evt.content);
+              scrollToBottom();
+            } else if (evt.type === 'error') {
+              bubble.innerHTML = renderMarkdown('Error: ' + evt.content);
+            }
+          } catch (e) { /* ignore parse errors */ }
+        }
+      }
+    } catch (err) {
+      typing.classList.remove('active');
+      addMessage('system', 'Connection error: ' + err.message);
+    } finally {
+      sending = false;
+      sendBtn.disabled = false;
+      input.focus();
+    }
+  }
+
+  // ─── Execute command ───
+  async function runCommand(cmd) {
+    closeMenu();
+    try {
+      const resp = await fetch('/api/command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Bolt-Token': BOLT_TOKEN },
+        body: JSON.stringify({ command: cmd }),
+      });
+      const data = await resp.json();
+      if (data.message) {
+        addMessage('system', data.message);
+      }
+      // Refresh mode badge
+      pollStatus();
+      // If /clear, remove all messages
+      if (cmd === '/clear') {
+        chat.innerHTML = '';
+      }
+    } catch (err) {
+      addMessage('system', 'Command error: ' + err.message);
+    }
+  }
+
+  // ─── Command panel ───
+  function openMenu() {
+    overlay.classList.add('active');
+    cmdPanel.classList.add('active');
+  }
+
+  function closeMenu() {
+    overlay.classList.remove('active');
+    cmdPanel.classList.remove('active');
+  }
+
+  menuBtn.addEventListener('click', openMenu);
+  overlay.addEventListener('click', closeMenu);
+
+  document.querySelectorAll('.cmd-item').forEach(btn => {
+    btn.addEventListener('click', () => runCommand(btn.dataset.cmd));
+  });
+
+  // ─── Input handling ───
+  function autoGrow() {
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+  }
+
+  input.addEventListener('input', autoGrow);
+
+  input.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+
+  sendBtn.addEventListener('click', sendMessage);
+
+  // ─── Voice input (MediaRecorder → server-side Whisper) ───
+  const micBtn = document.getElementById('micBtn');
+  let mediaRecorder = null;
+  let audioChunks = [];
+  let recording = false;
+
+  micBtn.addEventListener('click', async function() {
+    if (recording) {
+      // Stop recording → send to whisper
+      mediaRecorder.stop();
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioChunks = [];
+      mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
+
+      mediaRecorder.ondataavailable = function(e) {
+        if (e.data.size > 0) audioChunks.push(e.data);
+      };
+
+      mediaRecorder.onstart = function() {
+        recording = true;
+        micBtn.classList.add('listening');
+        input.placeholder = 'Listening... tap mic to stop';
+      };
+
+      mediaRecorder.onstop = async function() {
+        recording = false;
+        micBtn.classList.remove('listening');
+        input.placeholder = 'Transcribing...';
+
+        // Stop all tracks so the mic indicator goes away
+        stream.getTracks().forEach(t => t.stop());
+
+        const blob = new Blob(audioChunks, { type: 'audio/webm' });
+        const form = new FormData();
+        form.append('audio', blob, 'recording.webm');
+
+        try {
+          const resp = await fetch('/api/transcribe', { method: 'POST', body: form, headers: { 'X-Bolt-Token': BOLT_TOKEN } });
+          const data = await resp.json();
+          if (data.text) {
+            input.value = (input.value ? input.value + ' ' : '') + data.text;
+            autoGrow();
+            input.placeholder = 'Message BOLT...';
+            input.focus();
+          } else {
+            input.placeholder = 'Message BOLT...';
+            if (data.error) addMessage('system', 'Transcription error: ' + data.error);
+          }
+        } catch (err) {
+          input.placeholder = 'Message BOLT...';
+          addMessage('system', 'Transcription failed: ' + err.message);
+        }
+      };
+
+      mediaRecorder.start();
+    } catch (err) {
+      addMessage('system', 'Mic access denied. Check browser permissions.');
+    }
+  });
+
+  // ─── Load history on page open ───
+  async function loadHistory() {
+    try {
+      const resp = await fetch('/api/messages', { headers: { 'X-Bolt-Token': BOLT_TOKEN } });
+      const messages = await resp.json();
+      if (messages.length > 0 && emptyState) emptyState.remove();
+      messages.forEach(m => addMessage(m.role, m.content));
+    } catch (e) { /* silent fail on first load */ }
+  }
+
+  // ─── Poll status ───
+  async function pollStatus() {
+    try {
+      const resp = await fetch('/api/status', { headers: { 'X-Bolt-Token': BOLT_TOKEN } });
+      const data = await resp.json();
+      modeBadge.textContent = data.mode;
+      modeBadge.className = 'mode-badge ' + data.mode;
+    } catch (e) { /* silent */ }
+  }
+
+  // ─── Init ───
+  loadHistory();
+  pollStatus();
+  setInterval(pollStatus, 10000);
+  input.focus();
+})();
+</script>
+</body>
+</html>
