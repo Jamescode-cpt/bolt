@@ -277,8 +277,14 @@ def _generate_with_tools(model_key, context, session_id, stream_callback):
         if cleaned_text.strip():
             accumulated_text += cleaned_text + "\n"
 
+        # Fire-and-forget tools — don't loop back, just return the response
+        fire_and_forget = {"speak", "notify", "timer", "remind"}
+        tool_names_used = {name for name, _ in tool_calls}
+        if tool_names_used.issubset(fire_and_forget):
+            return accumulated_text + cleaned_text if accumulated_text else cleaned_text
+
         messages.append({"role": "assistant", "content": full_text})
-        messages.append({"role": "user", "content": "Tool results:\n" + "\n".join(all_results)})
+        messages.append({"role": "system", "content": "[Tool execution complete. Results below — do NOT re-call these tools. Continue your response naturally.]\n" + "\n".join(all_results)})
 
     return accumulated_text + full_text if accumulated_text else full_text
 

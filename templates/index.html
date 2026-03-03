@@ -427,6 +427,11 @@ html, body {
           <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
         </svg>
       </button>
+      <button class="send-btn" id="stopBtn" aria-label="Stop" style="display:none; background:#ef4444;">
+        <svg viewBox="0 0 24 24" fill="currentColor" stroke="none">
+          <rect x="6" y="6" width="12" height="12" rx="2"></rect>
+        </svg>
+      </button>
     </div>
   </div>
 </div>
@@ -500,7 +505,9 @@ html, body {
   const chat = document.getElementById('chat');
   const input = document.getElementById('input');
   const sendBtn = document.getElementById('sendBtn');
+  const stopBtn = document.getElementById('stopBtn');
   const typing = document.getElementById('typing');
+  let activeReader = null;
   const emptyState = document.getElementById('emptyState');
   const modeBadge = document.getElementById('modeBadge');
   const menuBtn = document.getElementById('menuBtn');
@@ -584,7 +591,8 @@ html, body {
     if (!msg || sending) return;
 
     sending = true;
-    sendBtn.disabled = true;
+    sendBtn.style.display = 'none';
+    stopBtn.style.display = '';
     input.value = '';
     autoGrow();
 
@@ -615,6 +623,7 @@ html, body {
       const bubble = addMessage('assistant', '');
       let fullText = '';
       const reader = resp.body.getReader();
+      activeReader = reader;
       const decoder = new TextDecoder();
       let buffer = '';
 
@@ -648,10 +657,25 @@ html, body {
       addMessage('system', 'Connection error: ' + err.message);
     } finally {
       sending = false;
-      sendBtn.disabled = false;
+      activeReader = null;
+      stopBtn.style.display = 'none';
+      sendBtn.style.display = '';
       input.focus();
     }
   }
+
+  // Stop button — cancel active stream
+  stopBtn.addEventListener('click', () => {
+    if (activeReader) {
+      activeReader.cancel();
+      activeReader = null;
+    }
+    typing.classList.remove('active');
+    sending = false;
+    stopBtn.style.display = 'none';
+    sendBtn.style.display = '';
+    input.focus();
+  });
 
   // ─── Execute command ───
   async function runCommand(cmd) {
