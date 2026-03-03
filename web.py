@@ -439,6 +439,22 @@ def _graceful_shutdown(delay=0):
 
     state.log("web_shutdown", "graceful")
 
+    # Clean up URL file
+    try:
+        url_file = os.path.join(os.path.expanduser("~"), ".bolt-url")
+        if os.path.exists(url_file):
+            os.unlink(url_file)
+    except Exception:
+        pass
+
+    # Clean up PID file
+    try:
+        pid_file = os.path.join(os.path.expanduser("~"), ".bolt.pid")
+        if os.path.exists(pid_file):
+            os.unlink(pid_file)
+    except Exception:
+        pass
+
     # Unload all Ollama models
     _unload_all_models()
 
@@ -557,6 +573,10 @@ def run_web(port=3000, gui_mode=False):
 
     if gui_mode:
         print(f"  \033[38;5;82mGUI mode:\033[0m   auto-shutdown when browser closes")
+        # Write URL to file so the launcher can open the browser with auth
+        url_file = os.path.join(os.path.expanduser("~"), ".bolt-url")
+        with open(url_file, "w") as f:
+            f.write(f"http://localhost:{port}?token={_auth_token}\n")
     print()
 
     state.log("web_start", f"port={port}, ssl={has_ssl}, gui={gui_mode}")

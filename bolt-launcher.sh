@@ -48,10 +48,12 @@ wait_for_server() {
 if [ -f "$PIDFILE" ]; then
     OLD_PID=$(cat "$PIDFILE" 2>/dev/null || true)
     if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
-        # BOLT is already running — find its port and open browser
-        PORT=$(ss -tlnp 2>/dev/null | grep "pid=$OLD_PID" | grep -oP ':\K\d+' | head -1 || echo "$DEFAULT_PORT")
-        [ -z "$PORT" ] && PORT=$DEFAULT_PORT
-        xdg-open "http://localhost:$PORT" 2>/dev/null || true
+        # BOLT is already running — open browser with saved URL
+        if [ -f "$HOME/.bolt-url" ]; then
+            xdg-open "$(cat "$HOME/.bolt-url")" 2>/dev/null || true
+        else
+            xdg-open "http://localhost:$DEFAULT_PORT" 2>/dev/null || true
+        fi
         exit 0
     fi
     rm -f "$PIDFILE"
@@ -89,10 +91,18 @@ nohup python3 bolt.py --gui --port "$PORT" > "$HOME/.bolt.log" 2>&1 &
 BOLT_PID=$!
 echo "$BOLT_PID" > "$PIDFILE"
 
-# ─── Wait for server, then open browser ───
+# ─── Wait for server, then open browser with auth token ───
+
+URL_FILE="$HOME/.bolt-url"
 
 if wait_for_server "http://localhost:$PORT"; then
-    xdg-open "http://localhost:$PORT" 2>/dev/null || true
+    # Read the full URL with token from the file the server writes
+    if [ -f "$URL_FILE" ]; then
+        BOLT_URL=$(cat "$URL_FILE")
+    else
+        BOLT_URL="http://localhost:$PORT"
+    fi
+    xdg-open "$BOLT_URL" 2>/dev/null || true
 else
     notify "BOLT took too long to start. Check ~/.bolt.log"
 fi
