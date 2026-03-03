@@ -4,7 +4,7 @@
 #
 # Usage: download this file, make it executable, double-click it.
 # Or:    bash install-gui.sh
-set -euo pipefail
+set -u  # treat unset vars as errors, but don't exit on command failures (GUI dialogs return non-zero on cancel)
 
 BOLT_DIR="${BOLT_DIR:-$HOME/bolt}"
 REPO_URL="${BOLT_REPO:-https://github.com/Jamescode-cpt/bolt.git}"
@@ -117,22 +117,7 @@ run_with_progress() {
 
 # ─── Welcome ───
 
-gui_info "Welcome to BOLT!\n\nBuilt On Local Terrain — a local AI companion that runs on your machine.\n\nThis installer will:\n  1. Install system dependencies\n  2. Install Ollama (AI model runner)\n  3. Download BOLT\n  4. Pull AI models for your hardware\n  5. Create a desktop shortcut\n\nNo data leaves your machine. No cloud required."
-
-# ─── Get sudo password ───
-
-SUDO_PASS=""
-if gui_question "BOLT needs to install some system packages.\nThis requires your password.\n\nContinue?"; then
-    SUDO_PASS=$(gui_password) || true
-fi
-
-run_sudo() {
-    if [ -n "$SUDO_PASS" ]; then
-        echo "$SUDO_PASS" | sudo -S "$@" 2>/dev/null
-    else
-        sudo "$@" 2>/dev/null
-    fi
-}
+gui_info "Welcome to BOLT!\n\nBuilt On Local Terrain — a local AI companion that runs on your machine.\n\nThis installer will:\n  1. Install any missing system tools\n  2. Install Ollama (AI model runner)\n  3. Download BOLT\n  4. Pull AI models for your hardware\n  5. Create a desktop shortcut\n\nNo data leaves your machine. No cloud required."
 
 # ─── Detect OS ───
 
@@ -155,38 +140,72 @@ if [ -z "$OS" ]; then
     exit 1
 fi
 
-# ─── Install system deps ───
+# ─── Check which deps are missing BEFORE asking for password ───
 
-(
-    echo "10"; echo "# Installing Python..."
-    if ! command -v python3 &>/dev/null; then
-        run_sudo $PKG_INSTALL python3 python3-pip 2>&1
+MISSING=""
+command -v python3 &>/dev/null || MISSING="$MISSING python3"
+command -v git &>/dev/null     || MISSING="$MISSING git"
+command -v openssl &>/dev/null || MISSING="$MISSING openssl"
+command -v pip3 &>/dev/null || command -v pip &>/dev/null || MISSING="$MISSING pip"
+
+SUDO_PASS=""
+HAVE_SUDO=false
+
+run_sudo() {
+    if [ "$HAVE_SUDO" = true ]; then
+        if [ -n "$SUDO_PASS" ]; then
+            echo "$SUDO_PASS" | sudo -S "$@" 2>/dev/null
+        else
+            sudo "$@" 2>/dev/null
+        fi
     fi
+}
 
-    echo "30"; echo "# Installing Git..."
-    if ! command -v git &>/dev/null; then
-        run_sudo $PKG_INSTALL git 2>&1
+if [ -n "$MISSING" ]; then
+    # Only ask for password if we actually need to install something
+    if gui_question "BOLT needs to install:$MISSING\n\nThis requires your system password.\nYour password is only used for this install step.\n\nContinue?"; then
+        SUDO_PASS=$(gui_password) || true
+        HAVE_SUDO=true
+    else
+        gui_error "Cannot continue without:$MISSING\n\nInstall them manually and run this installer again."
+        exit 1
     fi
-
-    echo "50"; echo "# Installing OpenSSL..."
-    if ! command -v openssl &>/dev/null; then
-        run_sudo $PKG_INSTALL openssl 2>&1
-    fi
-
-    echo "70"; echo "# Installing optional tools..."
-    run_sudo $PKG_INSTALL espeak-ng 2>&1 || true
-
-    echo "90"; echo "# Updating package lists..."
-    if [ "$OS" = "debian" ]; then
-        run_sudo apt-get update -qq 2>&1 || true
-    fi
-
-    echo "100"
-) | if [ "$GUI" = "zenity" ]; then
-    zenity --progress --title="BOLT" --text="Installing system packages..." \
-        --width=400 --auto-close --no-cancel 2>/dev/null || true
 else
-    cat > /dev/null  # kdialog fallback — just run silently
+    HAVE_SUDO=false
+fi
+
+# ─── Install system deps (only if something is missing) ───
+
+if [ -n "$MISSING" ]; then
+    (
+        echo "10"; echo "# Installing missing packages:$MISSING"
+        if ! command -v python3 &>/dev/null; then
+            echo "20"; echo "# Installing Python..."
+            run_sudo $PKG_INSTALL python3 python3-pip 2>&1
+        fi
+
+        if ! command -v git &>/dev/null; then
+            echo "40"; echo "# Installing Git..."
+            run_sudo $PKG_INSTALL git 2>&1
+        fi
+
+        if ! command -v openssl &>/dev/null; then
+            echo "60"; echo "# Installing OpenSSL..."
+            run_sudo $PKG_INSTALL openssl 2>&1
+        fi
+
+        echo "80"; echo "# Checking optional tools..."
+        if [ "$HAVE_SUDO" = true ]; then
+            run_sudo $PKG_INSTALL espeak-ng 2>&1 || true
+        fi
+
+        echo "100"
+    ) | if [ "$GUI" = "zenity" ]; then
+        zenity --progress --title="BOLT" --text="Installing system packages..." \
+            --width=400 --auto-close --no-cancel 2>/dev/null || true
+    else
+        cat > /dev/null
+    fi
 fi
 
 # ─── Install Ollama ───
@@ -212,15 +231,20 @@ fi
 # ─── Clone BOLT ───
 
 if [ -d "$BOLT_DIR" ]; then
-    (cd "$BOLT_DIR" && git pull --ff-only 2>&1 || true) | gui_progress_pulse "Updating BOLT..."
+    (cd "$BOLT_DIR" && git pull --ff-only 2>&1 || true; echo "done") | gui_progress_pulse "Updating BOLT..."
 else
-    git clone "$REPO_URL" "$BOLT_DIR" 2>&1 | gui_progress_pulse "Downloading BOLT..."
+    (git clone "$REPO_URL" "$BOLT_DIR" 2>&1 || true; echo "done") | gui_progress_pulse "Downloading BOLT..."
+fi
+
+if [ ! -d "$BOLT_DIR" ]; then
+    gui_error "Failed to download BOLT.\n\nCheck your internet connection and try again."
+    exit 1
 fi
 
 # ─── Python deps ───
 
 if [ -f "$BOLT_DIR/requirements.txt" ]; then
-    (pip install --user -r "$BOLT_DIR/requirements.txt" 2>&1 || pip3 install --user -r "$BOLT_DIR/requirements.txt" 2>&1) \
+    (pip install --user -r "$BOLT_DIR/requirements.txt" 2>&1 || pip3 install --user -r "$BOLT_DIR/requirements.txt" 2>&1 || true; echo "done") \
         | gui_progress_pulse "Installing Python packages..."
 fi
 
