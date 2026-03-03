@@ -1,6 +1,6 @@
 """BOLT custom tool — search inside files for patterns.
 
-Pure stdlib using re + os.walk(). Restricted to /home/mobilenode/.
+Pure stdlib using re + os.walk(). Restricted to the user's home directory.
 Skips binary files, capped at 50 matches.
 """
 
@@ -10,11 +10,11 @@ import re
 TOOL_NAME = "grep_search"
 TOOL_DESC = (
     "Search inside files for a pattern (regex). "
-    'Usage: <tool name="grep_search">TOOL_NAME\n/home/mobilenode/bolt</tool> — '
+    'Usage: <tool name="grep_search">TOOL_NAME\n~/bolt</tool> — '
     "line 1 = pattern, optional line 2 = directory (default: ~/)"
 )
 
-ALLOWED_ROOT = "/home/mobilenode"
+ALLOWED_ROOT = os.path.expanduser("~")
 MAX_MATCHES = 50
 MAX_LINE_LEN = 200
 # Skip files larger than this

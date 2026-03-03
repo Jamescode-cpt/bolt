@@ -11,7 +11,7 @@ TOOL_DESC = (
     "  verify <filepath> <expected>  - verify a file against an expected hash"
 )
 
-ALLOWED_ROOT = "/home/mobilenode/"
+ALLOWED_ROOT = os.path.expanduser("~") + "/"
 BLOCK_SIZE = 65536
 
 

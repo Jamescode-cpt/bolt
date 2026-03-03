@@ -16,7 +16,7 @@ TOOL_DESC = (
     '<tool name="monitor">set cpu 90</tool> — set CPU alert threshold'
 )
 
-HOME = "/home/mobilenode"
+HOME = os.path.expanduser("~")
 THRESHOLDS_FILE = os.path.join(HOME, "bolt", "monitor_thresholds.json")
 
 DEFAULT_THRESHOLDS = {

@@ -10,12 +10,12 @@ Examples:
   <tool name="pdf">read ~/documents/paper.pdf</tool>
   <tool name="pdf">info ~/documents/paper.pdf</tool>
   <tool name="pdf">search neural network ~/documents/paper.pdf</tool>
-Path restricted to /home/mobilenode/. Output truncated to 5000 chars."""
+Path restricted to the user's home directory. Output truncated to 5000 chars."""
 
 import os
 
 MAX_OUTPUT = 5000
-ALLOWED_PREFIX = "/home/mobilenode/"
+ALLOWED_PREFIX = os.path.expanduser("~") + "/"
 
 
 def _validate_path(filepath):

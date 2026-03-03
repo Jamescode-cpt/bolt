@@ -42,7 +42,7 @@ TOOL_DESC = (
     '<tool name="rss">remove MyFeed</tool> — unsubscribe'
 )
 
-HOME = "/home/mobilenode"
+HOME = os.path.expanduser("~")
 FEEDS_FILE = os.path.join(HOME, "bolt", "rss_feeds.json")
 
 # Atom namespace

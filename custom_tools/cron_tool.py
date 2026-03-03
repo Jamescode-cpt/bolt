@@ -13,7 +13,7 @@ TOOL_NAME = "cron"
 TOOL_DESC = (
     "Manage user crontab entries. "
     'Usage: <tool name="cron">list</tool> or '
-    '<tool name="cron">add * * * * * /home/mobilenode/script.sh</tool> or '
+    '<tool name="cron">add * * * * * ~/script.sh</tool> or '
     '<tool name="cron">remove 3</tool> (removes line 3)'
 )
 
@@ -139,7 +139,7 @@ def _add(entry):
     if not CRON_SCHEDULE_RE.match(entry):
         return (
             "Invalid cron format. Expected: MIN HOUR DOM MON DOW command\n"
-            "Example: */5 * * * * /home/mobilenode/script.sh"
+            "Example: */5 * * * * ~/script.sh"
         )
 
     # Extract command part (everything after the 5 schedule fields)
@@ -195,7 +195,7 @@ def run(args):
         return (
             'Usage:\n'
             '  <tool name="cron">list</tool>\n'
-            '  <tool name="cron">add */5 * * * * /home/mobilenode/script.sh</tool>\n'
+            '  <tool name="cron">add */5 * * * * ~/script.sh</tool>\n'
             '  <tool name="cron">remove 3</tool>'
         )
 

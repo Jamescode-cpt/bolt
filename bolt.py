@@ -341,7 +341,17 @@ def main():
     parser = argparse.ArgumentParser(description="BOLT — Built On Local Terrain")
     parser.add_argument("--web", action="store_true", help="Launch web UI instead of CLI")
     parser.add_argument("--port", type=int, default=3000, help="Web UI port (default: 3000)")
+    parser.add_argument("--setup", action="store_true", help="Re-run first-time setup")
     args = parser.parse_args()
+
+    # Ensure data directory exists
+    import env
+    os.makedirs(env.DATA_DIR, exist_ok=True)
+
+    # First-run detection — auto-launch setup wizard
+    if env.is_first_run() or args.setup:
+        import setup
+        setup.run_setup()
 
     if args.web:
         import web

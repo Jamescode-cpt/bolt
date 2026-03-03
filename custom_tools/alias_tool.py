@@ -4,7 +4,7 @@ Save, list, run, and remove command aliases.
 Persisted to ~/bolt/aliases.json.
 
 Safety:
-  - Commands can only reference paths under /home/mobilenode/ or standard
+  - Commands can only reference paths under the user's home directory or standard
     system binaries (/usr/bin, /usr/sbin, /bin, /sbin, /usr/local/bin).
   - No sudo allowed in alias commands.
   - Subprocess runs with a timeout (30s default).
@@ -27,7 +27,7 @@ _RUN_TIMEOUT = 30  # seconds
 
 # Allowed path prefixes for commands/arguments that look like paths
 _ALLOWED_PATH_PREFIXES = (
-    "/home/mobilenode/",
+    os.path.expanduser("~") + "/",
     "/usr/bin/",
     "/usr/sbin/",
     "/usr/local/bin/",

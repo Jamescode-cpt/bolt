@@ -47,7 +47,7 @@ DOWNLOAD_DIR = os.path.expanduser("~/Downloads")
 MAX_FILE_SIZE = 500 * 1024 * 1024  # 500MB
 TIMEOUT = 120
 ALLOWED_SCHEMES = ("http://", "https://")
-SAFE_PATH_PREFIX = "/home/mobilenode/"
+SAFE_PATH_PREFIX = os.path.expanduser("~") + "/"
 
 # Extensions that should never be downloaded to executable-ish locations
 DANGEROUS_EXTENSIONS = {
@@ -80,7 +80,7 @@ def _sanitize_filename(name):
 
 
 def _validate_path(filepath):
-    """Ensure the resolved path is under /home/mobilenode/."""
+    """Ensure the resolved path is under the user's home directory."""
     real = os.path.realpath(filepath)
     if not real.startswith(SAFE_PATH_PREFIX):
         return False, f"Path escapes allowed directory: {real}"

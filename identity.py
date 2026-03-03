@@ -19,7 +19,9 @@ from config import (
     PROFILE_INTERVAL,
 )
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bolt.db")
+import env
+
+DB_PATH = env.DB_PATH
 
 _local = threading.local()
 

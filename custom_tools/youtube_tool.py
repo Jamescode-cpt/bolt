@@ -18,7 +18,7 @@ TOOL_DESC = (
     '<tool name="youtube">search python tutorial</tool> — search top 5'
 )
 
-HOME = "/home/mobilenode"
+HOME = os.path.expanduser("~")
 DOWNLOAD_DIR = os.path.join(HOME, "Downloads")
 TIMEOUT = 120
 

@@ -19,7 +19,7 @@ TOOL_DESC = (
     '<tool name="image">strip /path/to/image.png</tool> — strip EXIF metadata.'
 )
 
-SAFE_PATH_PREFIX = "/home/mobilenode/"
+SAFE_PATH_PREFIX = os.path.expanduser("~") + "/"
 
 SUPPORTED_FORMATS = {
     "png", "jpg", "jpeg", "webp", "bmp", "gif", "tiff", "tif", "ico", "ppm", "pgm", "pbm",
@@ -27,7 +27,7 @@ SUPPORTED_FORMATS = {
 
 
 def _validate_path(filepath):
-    """Ensure path is under /home/mobilenode/ and exists."""
+    """Ensure path is under the user's home directory and exists."""
     filepath = os.path.expanduser(filepath)
     real = os.path.realpath(filepath)
     if not real.startswith(SAFE_PATH_PREFIX):

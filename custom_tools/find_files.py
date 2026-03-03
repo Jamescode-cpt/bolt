@@ -1,6 +1,6 @@
 """BOLT custom tool — recursive file search.
 
-Pure stdlib using pathlib.rglob(). Restricted to /home/mobilenode/.
+Pure stdlib using pathlib.rglob(). Restricted to the user's home directory.
 Capped at 100 results to avoid flooding context.
 """
 
@@ -11,11 +11,11 @@ TOOL_NAME = "find_files"
 TOOL_DESC = (
     "Find files by glob pattern. "
     'Usage: <tool name="find_files">*.py</tool> or '
-    '<tool name="find_files">*.py\n/home/mobilenode/bolt</tool> — '
+    '<tool name="find_files">*.py\n~/bolt</tool> — '
     "line 1 = pattern, optional line 2 = directory (default: ~/)"
 )
 
-ALLOWED_ROOT = "/home/mobilenode"
+ALLOWED_ROOT = os.path.expanduser("~")
 MAX_RESULTS = 100
 
 
@@ -23,7 +23,7 @@ def run(args):
     """Find files matching a glob pattern.
 
     Args: line 1 = glob pattern, optional line 2 = search directory.
-    Restricted to /home/mobilenode/.
+    Restricted to the user's home directory.
     """
     raw = args.strip() if args else ""
     if not raw:

@@ -14,13 +14,13 @@ Examples:
   <tool name="db">query ~/bolt/bolt.db SELECT * FROM messages ORDER BY id DESC LIMIT 5</tool>
   <tool name="db">sample ~/bolt/bolt.db messages</tool>
   <tool name="db">tables ~/bolt/bolt.db</tool>
-Path restricted to /home/mobilenode/. Read-only: only SELECT, PRAGMA, EXPLAIN allowed.
+Path restricted to the user's home directory. Read-only: only SELECT, PRAGMA, EXPLAIN allowed.
 Results truncated to 50 rows."""
 
 import os
 import sqlite3
 
-ALLOWED_PREFIX = "/home/mobilenode/"
+ALLOWED_PREFIX = os.path.expanduser("~") + "/"
 MAX_ROWS = 50
 MAX_COL_WIDTH = 60
 

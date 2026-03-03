@@ -4,8 +4,9 @@ import sqlite3
 import os
 import threading
 from config import MAX_CONTEXT_TOKENS, CHARS_PER_TOKEN
+import env
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bolt.db")
+DB_PATH = env.DB_PATH
 
 _local = threading.local()
 

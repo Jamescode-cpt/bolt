@@ -1,6 +1,6 @@
 """BOLT custom tool — create/extract zip & tar archives.
 
-Uses subprocess zip/unzip/tar. All paths validated under /home/mobilenode/.
+Uses subprocess zip/unzip/tar. All paths validated under the user's home directory.
 No shell=True anywhere. Supports zip, tar.gz, tar.bz2, tar.xz.
 """
 

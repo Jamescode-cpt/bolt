@@ -16,7 +16,7 @@ TOOL_DESC = (
     "saves to ~/screenshots/ and returns the file path"
 )
 
-SCREENSHOT_DIR = "/home/mobilenode/screenshots"
+SCREENSHOT_DIR = os.path.join(os.path.expanduser("~"), "screenshots")
 
 # Screenshot tools in preference order: (binary, args_template, description)
 # {output} will be replaced with the output file path

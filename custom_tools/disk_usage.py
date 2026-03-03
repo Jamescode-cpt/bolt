@@ -12,7 +12,7 @@ TOOL_DESC = (
     "  largest <path>    - top 10 largest files in a directory"
 )
 
-ALLOWED_ROOT = "/home/mobilenode/"
+ALLOWED_ROOT = os.path.expanduser("~") + "/"
 
 
 def _safe_path(path):

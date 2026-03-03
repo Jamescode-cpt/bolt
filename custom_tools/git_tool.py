@@ -1,6 +1,6 @@
 """BOLT custom tool — git operations.
 
-Wraps git via subprocess. Path restricted to /home/mobilenode/.
+Wraps git via subprocess. Path restricted to the user's home directory.
 Blocks dangerous commands (push --force, reset --hard, clean).
 """
 
@@ -16,7 +16,7 @@ TOOL_DESC = (
     "supports: status, log, diff, add, commit, branch, checkout, stash, remote, show, tag"
 )
 
-ALLOWED_ROOT = "/home/mobilenode"
+ALLOWED_ROOT = os.path.expanduser("~")
 GIT_TIMEOUT = 30
 
 # Allowed base git subcommands
@@ -56,7 +56,7 @@ def run(args):
     """Run a git command.
 
     Args is the git subcommand + arguments, e.g. 'status' or 'log --oneline -10'.
-    Optional: last line can be a path to run git in (must be under /home/mobilenode/).
+    Optional: last line can be a path to run git in (must be under the user's home directory).
     """
     raw = args.strip() if args else ""
     if not raw:
@@ -97,7 +97,7 @@ def run(args):
         work_dir = os.path.realpath(os.path.expanduser(work_dir))
     else:
         # Try to find a git repo from common locations
-        for candidate in ["/home/mobilenode/bolt", "/home/mobilenode"]:
+        for candidate in [os.path.join(ALLOWED_ROOT, "bolt"), ALLOWED_ROOT]:
             git_root = _find_git_dir(candidate)
             if git_root:
                 work_dir = git_root

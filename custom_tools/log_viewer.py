@@ -1,7 +1,7 @@
 """
 BOLT Custom Tool: Log Viewer
 Read-only log inspection — system logs, BOLT timeline, arbitrary log files.
-File paths restricted to /home/mobilenode/.
+File paths restricted to the user's home directory.
 """
 
 import os
@@ -18,12 +18,12 @@ TOOL_DESC = (
     "  search <pattern> <path>   - search/grep a log file for a pattern"
 )
 
-ALLOWED_PREFIX = "/home/mobilenode/"
+ALLOWED_PREFIX = os.path.expanduser("~") + "/"
 BOLT_DB = os.path.expanduser("~/bolt/bolt.db")
 
 
 def _validate_path(path, label="Path"):
-    """Ensure path is under /home/mobilenode/."""
+    """Ensure path is under the user's home directory."""
     resolved = os.path.realpath(os.path.expanduser(path))
     if not resolved.startswith(ALLOWED_PREFIX):
         raise ValueError(

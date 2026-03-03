@@ -14,7 +14,7 @@ TOOL_DESC = (
     '<tool name="system_info">battery</tool> — options: all, battery, cpu, ram, disk, temps'
 )
 
-HOME = "/home/mobilenode"
+HOME = os.path.expanduser("~")
 
 
 def _read_file(path):

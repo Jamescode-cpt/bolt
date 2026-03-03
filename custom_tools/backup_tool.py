@@ -1,7 +1,7 @@
 """
 BOLT Custom Tool: Backup Manager
 Creates, lists, and restores timestamped tar.gz backups.
-All paths restricted to /home/mobilenode/.
+All paths restricted to the user's home directory.
 """
 
 import os
@@ -17,11 +17,11 @@ TOOL_DESC = (
 )
 
 BACKUP_DIR = os.path.expanduser("~/backups")
-ALLOWED_PREFIX = "/home/mobilenode/"
+ALLOWED_PREFIX = os.path.expanduser("~") + "/"
 
 
 def _validate_path(path, label="Path"):
-    """Ensure path is under /home/mobilenode/ and exists check is caller's job."""
+    """Ensure path is under the user's home directory. Exists check is caller's job."""
     resolved = os.path.realpath(os.path.expanduser(path))
     if not resolved.startswith(ALLOWED_PREFIX):
         raise ValueError(

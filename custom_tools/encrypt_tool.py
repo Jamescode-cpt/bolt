@@ -1,7 +1,7 @@
 """
 BOLT Custom Tool: File Encryption/Decryption
 Uses Fernet (cryptography library) if available, falls back to openssl CLI.
-Password provided on second line of args. Paths restricted to /home/mobilenode/.
+Password provided on second line of args. Paths restricted to the user's home directory.
 """
 
 import base64
@@ -18,11 +18,11 @@ TOOL_DESC = (
     "Password must be on the second line of the args string."
 )
 
-ALLOWED_PREFIX = "/home/mobilenode/"
+ALLOWED_PREFIX = os.path.expanduser("~") + "/"
 
 
 def _validate_path(path, label="Path"):
-    """Ensure path is under /home/mobilenode/."""
+    """Ensure path is under the user's home directory."""
     resolved = os.path.realpath(os.path.expanduser(path))
     if not resolved.startswith(ALLOWED_PREFIX):
         raise ValueError(
