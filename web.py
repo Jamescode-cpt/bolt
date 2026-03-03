@@ -9,6 +9,7 @@ import time
 import subprocess
 import secrets
 import hmac
+import signal
 
 # Ensure bolt/ is on the path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -23,6 +24,7 @@ import pipeline
 import tools
 from identity import ProfileLearnerWorker
 from workers import SummarizerWorker, TaskTrackerWorker
+from config import MODELS, OLLAMA_URL
 
 app = Flask(__name__)
 app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10MB max request
@@ -48,6 +50,11 @@ _session_id = None
 _summarizer = None
 _task_tracker = None
 _profile_learner = None
+
+# ─── GUI mode heartbeat ───
+_gui_mode = False
+_last_heartbeat = 0
+_HEARTBEAT_TIMEOUT = 60  # seconds with no browser ping before auto-shutdown
 
 
 def _check_auth():
@@ -338,6 +345,10 @@ def api_command():
         _profile_learner = ProfileLearnerWorker(_session_id)
         result["message"] = "New session. I still know you though."
 
+    elif cmd == "/shutdown":
+        threading.Thread(target=_graceful_shutdown, args=(2,), daemon=True).start()
+        result["message"] = "BOLT is shutting down... You can close this tab."
+
     elif cmd == "/help":
         cmds = [
             "/companion   — switch to companion mode (chat/hangout)",
@@ -352,6 +363,7 @@ def api_command():
             "/task        — show/manage tasks",
             "/tools       — list available tools",
             "/clear       — new session (profile persists)",
+            "/shutdown    — shut down BOLT and unload models",
         ]
         result["message"] = "\n".join(cmds)
 
@@ -360,6 +372,108 @@ def api_command():
         result["message"] = f"Unknown command: {cmd}"
 
     return jsonify(result)
+
+
+# ─── Heartbeat & Shutdown (GUI mode) ───
+
+@app.route("/api/heartbeat", methods=["POST"])
+def api_heartbeat():
+    """Browser pings this every 15s to say 'I'm still here'."""
+    auth_err = _check_auth()
+    if auth_err:
+        return auth_err
+    global _last_heartbeat
+    _last_heartbeat = time.time()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/shutdown", methods=["POST"])
+def api_shutdown():
+    """Graceful shutdown — save session, unload models, exit."""
+    auth_err = _check_auth()
+    if auth_err:
+        return auth_err
+    # Run shutdown in a thread so we can return the response first
+    threading.Thread(target=_graceful_shutdown, args=(2,), daemon=True).start()
+    return jsonify({"ok": True, "message": "BOLT is shutting down..."})
+
+
+def _unload_all_models():
+    """Tell Ollama to unload every loaded model."""
+    try:
+        import requests
+        resp = requests.get(f"{OLLAMA_URL}/api/ps", timeout=5)
+        if resp.status_code == 200:
+            for m in resp.json().get("models", []):
+                try:
+                    requests.post(
+                        f"{OLLAMA_URL}/api/generate",
+                        json={"model": m["name"], "prompt": "", "keep_alive": 0},
+                        timeout=15,
+                    )
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+
+def _graceful_shutdown(delay=0):
+    """Clean exit — save everything, unload models, stop server."""
+    if delay:
+        time.sleep(delay)
+
+    # Stop workers
+    try:
+        if _summarizer:
+            _summarizer.stop()
+    except Exception:
+        pass
+
+    # Save session snapshot
+    try:
+        if _summarizer:
+            _summarizer.force_summarize()
+        memory.save_session_snapshot(_session_id)
+    except Exception:
+        pass
+
+    state.log("web_shutdown", "graceful")
+
+    # Unload all Ollama models
+    _unload_all_models()
+
+    # Exit the process
+    os._exit(0)
+
+
+class _HeartbeatMonitor(threading.Thread):
+    """Watches for browser disconnect in GUI mode.
+
+    If no heartbeat received for 60s, assumes the user closed their browser
+    and triggers graceful shutdown — saves session, unloads models, exits.
+    Only runs when --gui flag is set.
+    """
+
+    def __init__(self):
+        super().__init__(daemon=True)
+        self._stop_event = threading.Event()
+
+    def run(self):
+        # Wait for first heartbeat before monitoring
+        while not self._stop_event.is_set():
+            if _last_heartbeat > 0:
+                break
+            self._stop_event.wait(5)
+
+        # Now monitor for staleness
+        while not self._stop_event.is_set():
+            if _last_heartbeat > 0:
+                elapsed = time.time() - _last_heartbeat
+                if elapsed > _HEARTBEAT_TIMEOUT:
+                    state.log("heartbeat_timeout", f"no ping for {elapsed:.0f}s")
+                    _graceful_shutdown()
+                    return
+            self._stop_event.wait(10)
 
 
 # ─── Startup ───
@@ -405,8 +519,10 @@ def _get_tailscale_ip():
     return None
 
 
-def run_web(port=3000):
+def run_web(port=3000, gui_mode=False):
     """Launch the web server with a nice banner."""
+    global _gui_mode
+    _gui_mode = gui_mode
     _ensure_initialized()
 
     ips = _get_local_ips()
@@ -439,12 +555,23 @@ def run_web(port=3000):
     print("  \033[38;5;33m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m")
     print()
 
-    state.log("web_start", f"port={port}, ssl={has_ssl}")
+    if gui_mode:
+        print(f"  \033[38;5;82mGUI mode:\033[0m   auto-shutdown when browser closes")
+    print()
+
+    state.log("web_start", f"port={port}, ssl={has_ssl}, gui={gui_mode}")
+
+    # Start heartbeat monitor in GUI mode
+    if gui_mode:
+        monitor = _HeartbeatMonitor()
+        monitor.start()
 
     ssl_ctx = None
-    if has_ssl:
+    if has_ssl and not gui_mode:
+        # GUI mode uses HTTP on localhost (no SSL warning for Joe)
         import ssl
         ssl_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         ssl_ctx.load_cert_chain(cert_file, key_file)
 
-    app.run(host="127.0.0.1", port=port, threaded=True, debug=False, ssl_context=ssl_ctx)
+    host = "127.0.0.1" if gui_mode else "127.0.0.1"
+    app.run(host=host, port=port, threaded=True, debug=False, ssl_context=ssl_ctx)

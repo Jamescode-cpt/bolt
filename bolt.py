@@ -340,6 +340,7 @@ def main():
     import argparse
     parser = argparse.ArgumentParser(description="BOLT — Built On Local Terrain")
     parser.add_argument("--web", action="store_true", help="Launch web UI instead of CLI")
+    parser.add_argument("--gui", action="store_true", help="GUI mode — auto-shutdown when browser closes")
     parser.add_argument("--port", type=int, default=3000, help="Web UI port (default: 3000)")
     parser.add_argument("--setup", action="store_true", help="Re-run first-time setup")
     args = parser.parse_args()
@@ -353,9 +354,9 @@ def main():
         import setup
         setup.run_setup()
 
-    if args.web:
+    if args.web or args.gui:
         import web
-        web.run_web(port=args.port)
+        web.run_web(port=args.port, gui_mode=args.gui)
         return
 
     # Initialize

@@ -487,6 +487,11 @@ html, body {
     <div class="cmd-name">/help</div>
     <div class="cmd-desc">Show all commands</div>
   </button>
+  <hr style="border-color: var(--border); margin: 8px 0;">
+  <button class="cmd-item" data-cmd="/shutdown" style="color: #ef4444;">
+    <div class="cmd-name" style="color: #ef4444;">Shut Down BOLT</div>
+    <div class="cmd-desc">Stop server & unload models</div>
+  </button>
 </div>
 
 <script>
@@ -651,6 +656,12 @@ html, body {
   // ─── Execute command ───
   async function runCommand(cmd) {
     closeMenu();
+
+    // Shutdown confirmation
+    if (cmd === '/shutdown') {
+      if (!confirm('Shut down BOLT? This will stop the server and unload all models.')) return;
+    }
+
     try {
       const resp = await fetch('/api/command', {
         method: 'POST',
@@ -666,6 +677,12 @@ html, body {
       // If /clear, remove all messages
       if (cmd === '/clear') {
         chat.innerHTML = '';
+      }
+      // If shutdown, disable the UI
+      if (cmd === '/shutdown') {
+        input.disabled = true;
+        sendBtn.disabled = true;
+        input.placeholder = 'BOLT has been shut down';
       }
     } catch (err) {
       addMessage('system', 'Command error: ' + err.message);
@@ -791,9 +808,23 @@ html, body {
     } catch (e) { /* silent */ }
   }
 
+  // ─── Heartbeat (keeps server alive while browser is open) ───
+  function sendHeartbeat() {
+    fetch('/api/heartbeat', {
+      method: 'POST',
+      headers: { 'X-Bolt-Token': BOLT_TOKEN }
+    }).catch(() => {});
+  }
+  setInterval(sendHeartbeat, 15000);
+  // Also ping when tab becomes visible again
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) sendHeartbeat();
+  });
+
   // ─── Init ───
   loadHistory();
   pollStatus();
+  sendHeartbeat();
   setInterval(pollStatus, 10000);
   input.focus();
 })();

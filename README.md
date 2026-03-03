@@ -12,6 +12,16 @@ curl -fsSL https://raw.githubusercontent.com/Jamescode-cpt/bolt/main/install.sh 
 
 That's it. BOLT installs system deps, Ollama, pulls models for your hardware, runs setup, and leaves you at a prompt ready to chat.
 
+## GUI Install (No Terminal Required)
+
+If you've never used a terminal, download the graphical installer instead:
+
+1. Download [`install-gui.sh`](https://raw.githubusercontent.com/Jamescode-cpt/bolt/main/install-gui.sh)
+2. Right-click the file → **Properties** → **Permissions** → tick **Allow executing as program**
+3. Double-click it
+
+The installer walks you through everything with familiar dialog boxes — no typing required. When it's done, a **BOLT icon** appears on your desktop. Click it to launch.
+
 ## Requirements
 
 - **Python 3.10+**
