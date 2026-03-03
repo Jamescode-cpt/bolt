@@ -354,10 +354,20 @@ def stage_write(spec, built_files):
 
     _ok(f"All {len(written)} files written to {output_dir}")
 
-    # Restore chat models (fast too, since pipeline is done)
+    # Restore chat models — reload companion + worker_heavy in background
+    # so user never notices the swap (router was hot the whole time)
     _status("Restoring chat models...")
     unload_all_except_chat()
     warm_model(MODELS["companion"])
+    # Reload 14b in background if RAM allows (16GB+ tiers)
+    try:
+        import env
+        if env.RAM_GB >= 16 and MODELS.get("worker_heavy"):
+            threading.Thread(
+                target=warm_model, args=(MODELS["worker_heavy"],), daemon=True
+            ).start()
+    except Exception:
+        pass
 
     return written
 

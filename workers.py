@@ -122,15 +122,27 @@ class TaskTrackerWorker:
 
 
 class HeartbeatWorker(threading.Thread):
-    """Keeps models warm in Ollama while BOLT is running.
+    """Keeps core models warm in Ollama while BOLT is running.
 
-    Pings keep_alive on router + companion every 4.5 minutes so Ollama
-    never unloads them during a session. Stops when BOLT shuts down.
+    On full/beast tiers (16GB+), router + companion (7b) + worker_heavy (14b)
+    all stay hot together (~13.5GB). The 1.5b router is ALWAYS hot — it handles
+    classification so the user never waits. Only when the 32b beast is needed
+    do the 7b and 14b unload (pipeline handles that), then reload after.
+
+    On standard tier (8-12GB), only router + companion stay hot.
     """
 
     def __init__(self):
         super().__init__(daemon=True)
         self._stop_event = threading.Event()
+        # Determine which models to keep hot based on available RAM
+        self._hot_keys = ["router", "companion"]
+        try:
+            import env
+            if env.RAM_GB >= 16 and MODELS.get("worker_heavy"):
+                self._hot_keys.append("worker_heavy")
+        except Exception:
+            pass
 
     def stop(self):
         self._stop_event.set()
@@ -142,7 +154,7 @@ class HeartbeatWorker(threading.Thread):
 
     def _pulse(self):
         """Send a keep_alive ping to each core model."""
-        for key in ("router", "companion"):
+        for key in self._hot_keys:
             model = MODELS.get(key)
             if not model:
                 continue

@@ -24,8 +24,8 @@ MODELS = {
     "cloud":        "cloud",
 }
 
-# Models kept loaded during companion mode
-COMPANION_MODELS = ["router", "companion"]
+# Models kept loaded during normal operation (16GB+ keeps all three hot)
+COMPANION_MODELS = ["router", "companion", "worker_heavy"]
 # Models kept loaded during build mode (router always stays)
 BUILD_MODELS = ["router"]
 
