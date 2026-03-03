@@ -1,9 +1,11 @@
-# BOLT data (contains conversations, profile, personal data)
+# Data directory (DB, certs, config — all generated at runtime)
+data/*
+!data/.gitkeep
+
+# Legacy locations (in case someone runs without setup)
 bolt.db
 bolt.db-wal
 bolt.db-shm
-
-# SSL certs (private key!)
 bolt-cert.pem
 bolt-key.pem
 
@@ -22,6 +24,9 @@ calendar.json
 __pycache__/
 *.pyc
 *.pyo
+*.egg-info/
+dist/
+build/
 
 # Environment
 .env
