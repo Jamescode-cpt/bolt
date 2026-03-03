@@ -349,8 +349,13 @@ def main():
     import env
     os.makedirs(env.DATA_DIR, exist_ok=True)
 
-    # First-run detection — auto-launch setup wizard
+    # First-run detection — auto-launch setup wizard (skip in --gui mode, no terminal)
     if env.is_first_run() or args.setup:
+        if args.gui:
+            # GUI mode has no terminal — can't run interactive setup
+            # The GUI installer (install-gui.sh) already ran setup
+            print("ERROR: BOLT hasn't been set up yet. Run the installer first or: python3 bolt.py --setup")
+            sys.exit(1)
         import setup
         setup.run_setup()
 

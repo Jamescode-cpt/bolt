@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # BOLT Desktop Launcher — starts BOLT web UI and opens the browser.
 # Used by the .desktop file so Joe Soap just clicks an icon.
-set -euo pipefail
+set -u
 
-BOLT_DIR="${BOLT_DIR:-$HOME/bolt}"
+# Default BOLT_DIR to wherever this script lives (set by the installer)
+BOLT_DIR="${BOLT_DIR:-$(cd "$(dirname "$0")" && pwd)}"
 PIDFILE="$HOME/.bolt.pid"
-DEFAULT_PORT=3000
+DEFAULT_PORT=3080
 
 # ─── Helpers ───
 
@@ -43,6 +44,26 @@ wait_for_server() {
     return 1
 }
 
+open_browser() {
+    local url="$1"
+    # Force a NEW visible window — xdg-open often just opens a background tab
+    if command -v firefox &>/dev/null; then
+        nohup firefox --new-window "$url" &>/dev/null &
+        return 0
+    elif command -v google-chrome &>/dev/null; then
+        nohup google-chrome --new-window "$url" &>/dev/null &
+        return 0
+    elif command -v chromium-browser &>/dev/null; then
+        nohup chromium-browser --new-window "$url" &>/dev/null &
+        return 0
+    elif command -v chromium &>/dev/null; then
+        nohup chromium --new-window "$url" &>/dev/null &
+        return 0
+    fi
+    # Fallback
+    xdg-open "$url" 2>/dev/null || true
+}
+
 # ─── Check if BOLT is already running ───
 
 if [ -f "$PIDFILE" ]; then
@@ -50,10 +71,11 @@ if [ -f "$PIDFILE" ]; then
     if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
         # BOLT is already running — open browser with saved URL
         if [ -f "$HOME/.bolt-url" ]; then
-            xdg-open "$(cat "$HOME/.bolt-url")" 2>/dev/null || true
+            BOLT_URL=$(tr -d '[:space:]' < "$HOME/.bolt-url")
         else
-            xdg-open "http://localhost:$DEFAULT_PORT" 2>/dev/null || true
+            BOLT_URL="http://localhost:$DEFAULT_PORT"
         fi
+        open_browser "$BOLT_URL"
         exit 0
     fi
     rm -f "$PIDFILE"
@@ -95,14 +117,16 @@ echo "$BOLT_PID" > "$PIDFILE"
 
 URL_FILE="$HOME/.bolt-url"
 
-if wait_for_server "http://localhost:$PORT"; then
+if wait_for_server "http://localhost:$PORT/api/health"; then
+    # Give server a moment to write the URL file
+    sleep 1
     # Read the full URL with token from the file the server writes
     if [ -f "$URL_FILE" ]; then
-        BOLT_URL=$(cat "$URL_FILE")
+        BOLT_URL=$(tr -d '[:space:]' < "$URL_FILE")
     else
         BOLT_URL="http://localhost:$PORT"
     fi
-    xdg-open "$BOLT_URL" 2>/dev/null || true
+    open_browser "$BOLT_URL"
 else
     notify "BOLT took too long to start. Check ~/.bolt.log"
 fi

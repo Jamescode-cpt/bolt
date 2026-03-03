@@ -376,6 +376,12 @@ def api_command():
 
 # ─── Heartbeat & Shutdown (GUI mode) ───
 
+@app.route("/api/health", methods=["GET"])
+def api_health():
+    """No-auth health check — used by the launcher to detect when server is ready."""
+    return jsonify({"ok": True})
+
+
 @app.route("/api/heartbeat", methods=["POST"])
 def api_heartbeat():
     """Browser pings this every 15s to say 'I'm still here'."""
@@ -593,5 +599,5 @@ def run_web(port=3000, gui_mode=False):
         ssl_ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         ssl_ctx.load_cert_chain(cert_file, key_file)
 
-    host = "127.0.0.1" if gui_mode else "127.0.0.1"
+    host = "127.0.0.1" if gui_mode else "0.0.0.0"
     app.run(host=host, port=port, threaded=True, debug=False, ssl_context=ssl_ctx)

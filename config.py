@@ -35,7 +35,7 @@ OLLAMA_URL = "http://localhost:11434"
 # Background worker settings
 SUMMARY_INTERVAL = 20   # messages before auto-summarize
 PROFILE_INTERVAL = 5    # messages between profile learning passes
-MAX_CONTEXT_TOKENS = 2000
+MAX_CONTEXT_TOKENS = 8000
 
 # Rough chars-per-token estimate for budgeting
 CHARS_PER_TOKEN = 4
