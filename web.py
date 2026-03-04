@@ -10,6 +10,8 @@ import subprocess
 import secrets
 import hmac
 import signal
+import base64
+import io
 
 # Ensure bolt/ is on the path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -34,7 +36,7 @@ app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10MB max request
 def _security_headers(response):
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'DENY'
-    response.headers['Content-Security-Policy'] = "default-src 'self' 'unsafe-inline'; connect-src 'self'"
+    response.headers['Content-Security-Policy'] = "default-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:"
     return response
 
 # ─── Concurrency ───
@@ -539,6 +541,75 @@ def _get_tailscale_ip():
     except Exception:
         pass
     return None
+
+
+def _make_qr_base64(data):
+    """Generate a QR code as a base64-encoded PNG string."""
+    import qrcode
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=10,
+        border=2,
+    )
+    qr.add_data(data)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode("ascii")
+
+
+@app.route("/api/takeitaway", methods=["GET"])
+def api_takeitaway():
+    """Generate QR codes for phone access — 'Take It Away' feature."""
+    _ensure_initialized()
+    auth_err = _check_auth()
+    if auth_err:
+        return auth_err
+
+    cert_dir = os.path.dirname(os.path.abspath(__file__))
+    has_ssl = (os.path.exists(os.path.join(cert_dir, "bolt-cert.pem"))
+               and os.path.exists(os.path.join(cert_dir, "bolt-key.pem")))
+    scheme = "https" if has_ssl else "http"
+
+    # Get port from request host header
+    port = 3000
+    if request.host and ":" in request.host:
+        try:
+            port = int(request.host.rsplit(":", 1)[1])
+        except (ValueError, IndexError):
+            pass
+
+    ips = _get_local_ips()
+    ts_ip = _get_tailscale_ip()
+    local_ip = ips[0] if ips else "localhost"
+    local_url = f"{scheme}://{local_ip}:{port}?token={_auth_token}"
+
+    result = {"urls": [], "qr_available": True}
+
+    try:
+        result["urls"].append({
+            "label": "Local Network (same WiFi)",
+            "url": local_url,
+            "qr_base64": _make_qr_base64(local_url),
+        })
+        if ts_ip:
+            ts_url = f"{scheme}://{ts_ip}:{port}?token={_auth_token}"
+            result["urls"].append({
+                "label": "Tailscale (anywhere in the world)",
+                "url": ts_url,
+                "qr_base64": _make_qr_base64(ts_url),
+            })
+    except ImportError:
+        result["qr_available"] = False
+        result["error"] = "qrcode library not installed. Run: pip3 install qrcode"
+        result["urls"].append({"label": "Local Network", "url": local_url, "qr_base64": None})
+        if ts_ip:
+            ts_url = f"{scheme}://{ts_ip}:{port}?token={_auth_token}"
+            result["urls"].append({"label": "Tailscale", "url": ts_url, "qr_base64": None})
+
+    return jsonify(result)
 
 
 def run_web(port=3000, gui_mode=False):

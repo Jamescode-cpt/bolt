@@ -381,6 +381,92 @@ html, body {
 .empty-state .bolt-logo { font-size: 48px; margin-bottom: 16px; }
 .empty-state h2 { color: var(--text); font-size: 20px; margin-bottom: 8px; }
 .empty-state p { font-size: 14px; max-width: 300px; }
+
+/* Take It Away modal */
+.tia-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.75);
+  z-index: 200;
+  backdrop-filter: blur(6px);
+  align-items: center;
+  justify-content: center;
+}
+.tia-overlay.active { display: flex; }
+.tia-modal {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  width: 90%;
+  max-width: 400px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+.tia-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.tia-title { font-weight: 700; font-size: 16px; color: var(--text); }
+.tia-close {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 24px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+.tia-close:hover { color: var(--text); }
+.tia-body { padding: 20px; }
+.tia-loading { text-align: center; color: var(--text-dim); padding: 40px 0; }
+.tia-section { margin-bottom: 24px; }
+.tia-section:last-child { margin-bottom: 0; }
+.tia-label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+.tia-qr { text-align: center; margin-bottom: 12px; }
+.tia-qr img {
+  width: 200px;
+  height: 200px;
+  border-radius: 8px;
+  background: white;
+  padding: 8px;
+}
+.tia-url-row { display: flex; gap: 8px; align-items: center; }
+.tia-url {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: var(--blue-glow);
+  font-size: 11px;
+  font-family: monospace;
+  word-break: break-all;
+  user-select: all;
+  -webkit-user-select: all;
+}
+.tia-copy {
+  background: var(--border);
+  border: none;
+  border-radius: 8px;
+  color: var(--text-dim);
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.tia-copy:hover { background: var(--blue); color: white; }
+.tia-divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
 </style>
 </head>
 <body>
@@ -493,10 +579,28 @@ html, body {
     <div class="cmd-desc">Show all commands</div>
   </button>
   <hr style="border-color: var(--border); margin: 8px 0;">
+  <button class="cmd-item" id="takeItAwayBtn">
+    <div class="cmd-name" style="color: #10b981;">&#128241; Take It Away</div>
+    <div class="cmd-desc">QR code to open BOLT on your phone</div>
+  </button>
+  <hr style="border-color: var(--border); margin: 8px 0;">
   <button class="cmd-item" data-cmd="/shutdown" style="color: #ef4444;">
     <div class="cmd-name" style="color: #ef4444;">Shut Down BOLT</div>
     <div class="cmd-desc">Stop server & unload models</div>
   </button>
+</div>
+
+<!-- Take It Away modal -->
+<div class="tia-overlay" id="tiaOverlay">
+  <div class="tia-modal">
+    <div class="tia-header">
+      <span class="tia-title">&#128241; Take It Away</span>
+      <button class="tia-close" id="tiaClose" aria-label="Close">&times;</button>
+    </div>
+    <div class="tia-body" id="tiaBody">
+      <div class="tia-loading">Generating QR codes...</div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -843,6 +947,71 @@ html, body {
   // Also ping when tab becomes visible again
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) sendHeartbeat();
+  });
+
+  // ─── Take It Away ───
+  const tiaOverlay = document.getElementById('tiaOverlay');
+  const tiaBody = document.getElementById('tiaBody');
+  const tiaClose = document.getElementById('tiaClose');
+  const takeItAwayBtn = document.getElementById('takeItAwayBtn');
+
+  function openTakeItAway() {
+    closeMenu();
+    tiaOverlay.classList.add('active');
+    tiaBody.innerHTML = '<div class="tia-loading">Generating QR codes...</div>';
+
+    fetch('/api/takeitaway', {
+      headers: { 'X-Bolt-Token': BOLT_TOKEN }
+    })
+    .then(function(resp) { return resp.json(); })
+    .then(function(data) {
+      var html = '';
+      if (data.error && !data.qr_available) {
+        html += '<div style="text-align:center;color:var(--gold);padding:10px 0;">' + escapeHtml(data.error) + '</div>';
+      }
+      if (data.urls && data.urls.length > 0) {
+        data.urls.forEach(function(entry, i) {
+          if (i > 0) html += '<hr class="tia-divider">';
+          html += '<div class="tia-section">';
+          html += '<div class="tia-label">' + escapeHtml(entry.label) + '</div>';
+          if (entry.qr_base64) {
+            html += '<div class="tia-qr"><img src="data:image/png;base64,' + entry.qr_base64 + '" alt="QR Code"></div>';
+          }
+          html += '<div class="tia-url-row">';
+          html += '<div class="tia-url" id="tia-url-' + i + '">' + escapeHtml(entry.url) + '</div>';
+          html += '<button class="tia-copy" data-idx="' + i + '">Copy</button>';
+          html += '</div></div>';
+        });
+      } else {
+        html += '<div style="text-align:center;color:var(--text-dim);padding:20px 0;">No network addresses found.</div>';
+      }
+      tiaBody.innerHTML = html;
+
+      // Wire up copy buttons
+      tiaBody.querySelectorAll('.tia-copy').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var idx = btn.getAttribute('data-idx');
+          var el = document.getElementById('tia-url-' + idx);
+          if (el && navigator.clipboard) {
+            navigator.clipboard.writeText(el.textContent).then(function() {
+              btn.textContent = 'Copied!';
+              setTimeout(function() { btn.textContent = 'Copy'; }, 2000);
+            });
+          }
+        });
+      });
+    })
+    .catch(function(err) {
+      tiaBody.innerHTML = '<div style="text-align:center;color:#ef4444;padding:20px 0;">Failed: ' + escapeHtml(err.message) + '</div>';
+    });
+  }
+
+  function closeTakeItAway() { tiaOverlay.classList.remove('active'); }
+
+  takeItAwayBtn.addEventListener('click', openTakeItAway);
+  tiaClose.addEventListener('click', closeTakeItAway);
+  tiaOverlay.addEventListener('click', function(e) {
+    if (e.target === tiaOverlay) closeTakeItAway();
   });
 
   // ─── Init ───
