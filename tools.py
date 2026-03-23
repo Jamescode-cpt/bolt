@@ -75,8 +75,21 @@ def parse_tool_calls(text):
     """Extract tool calls from model output.
 
     Looks for: <tool name="tool_name">arguments</tool>
-    Returns list of (name, args, full_match) tuples and the text with tool calls removed.
+    Also recovers tool calls the model accidentally wrapped in markdown code blocks.
+    Returns list of (name, args) tuples and the text with tool calls removed.
     """
+    # First: strip markdown code fences that wrap tool calls (common hallucination)
+    # Catches ```<tool name="...">...</tool>``` and ```tool name="..."...```
+    text = re.sub(
+        r'```(?:plaintext|tool|xml|html)?\s*\n?\s*(<tool\s+name="[^"]+">.*?</tool>)\s*\n?\s*```',
+        r'\1', text, flags=re.DOTALL
+    )
+    # Also catch: ```tool name="X">Y</tool>``` (missing opening <)
+    text = re.sub(
+        r'```(tool\s+name="[^"]+">.*?</tool>)```',
+        r'<\1', text, flags=re.DOTALL
+    )
+
     pattern = r'<tool\s+name="([^"]+)">(.*?)</tool>'
     matches = re.findall(pattern, text, re.DOTALL)
     cleaned = re.sub(pattern, "", text, flags=re.DOTALL).strip()

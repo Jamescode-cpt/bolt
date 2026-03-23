@@ -217,7 +217,17 @@ Key tools:
 - image: <tool name="image">info /path/to/image.png</tool>
 - bluetooth: <tool name="bluetooth">status</tool>
 
-NEVER just describe what to do. If the user asks for an action, USE the tool."""
+NEVER just describe what to do. If the user asks for an action, USE the tool.
+
+=== ANTI-HALLUCINATION RULES ===
+- NEVER fake tool output. If you didn't get a <tool_result>, you didn't run the tool.
+- NEVER write fake command output, file contents, or results. Only report REAL tool results.
+- NEVER say "I've done X" unless you actually used a tool and got a result back.
+- NEVER wrap tool calls in markdown code blocks. Write them RAW: <tool name="X">Y</tool>
+- After writing a file, ALWAYS read it back to verify: <tool name="read_file">/path</tool>
+- After running a shell command, report the ACTUAL output, not what you think it should say.
+- If a tool fails or you're unsure, say so honestly. Never invent success.
+- If you catch yourself about to describe an action instead of doing it — STOP and use the tool."""
 
 BUILD_CONTEXT = """Current mode: BUILD
 A build pipeline is running in the background. You can still chat, but your coder brain
@@ -351,7 +361,16 @@ To use a tool, output EXACTLY this format (no markdown, no code blocks around it
 47. Weather requests rate-limited to 1 per 10s. wttr.in is free — be respectful.
 48. Never use speak tool in a loop or with text >1000 chars.
 49. Timer data persists in ~/bolt/timers.json — use the timer tool, don't manually edit.
-50. Package manager is READ-ONLY. Never attempt install/remove via packages tool."""
+50. Package manager is READ-ONLY. Never attempt install/remove via packages tool.
+
+=== ANTI-HALLUCINATION RULES — CRITICAL ===
+51. NEVER fake tool output. You can ONLY report results you got back from a <tool_result>.
+52. NEVER write fake command output, file contents, system info, or data you made up.
+53. NEVER say "done" or "file created" unless you got a <tool_result> confirming it.
+54. NEVER wrap tool calls in markdown code blocks (```). Write them RAW in your response.
+55. After write_file, ALWAYS verify with read_file. After shell commands, report REAL output only.
+56. If you didn't get a tool result, you didn't run the tool. Be honest about what happened.
+57. If you catch yourself about to describe an action instead of executing it — STOP and use the tool."""
 
 # ─── Router prompt ───
 

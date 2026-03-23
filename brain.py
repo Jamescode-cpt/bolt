@@ -303,6 +303,19 @@ def _generate_with_tools(model_key, context, session_id, stream_callback):
             memory.save_message(session_id, "tool", f"Called {tool_name}")
             memory.save_message(session_id, "tool_result", result[:500])
 
+            # Auto-verify file writes — read back to confirm
+            if tool_name == "write_file" and success:
+                file_path = tool_args.split("\n", 1)[0].strip()
+                v_success, v_result = tools.execute_tool("read_file", file_path)
+                if v_success:
+                    all_results.append(tools.format_tool_result(
+                        "verify_write", f"Verified: {file_path} exists ({len(v_result)} chars)"
+                    ))
+                else:
+                    all_results.append(tools.format_tool_result(
+                        "verify_write", f"WARNING: {file_path} write may have failed: {v_result}"
+                    ))
+
         if cleaned_text.strip():
             accumulated_text += cleaned_text + "\n"
 
