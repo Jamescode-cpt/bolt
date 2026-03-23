@@ -1,11 +1,16 @@
-"""BOLT custom tool — apt/dpkg package query (READ-ONLY).
+"""BOLT custom tool — package query (READ-ONLY).
 
+Cross-platform: Linux (apt/dpkg), macOS (brew).
 Strictly no install/remove. Only search, info, list, check.
-Package names validated with regex.
 """
 
 import re
 import subprocess
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+from platform_utils import IS_MAC, get_package_manager
 
 TOOL_NAME = "packages"
 TOOL_DESC = (
@@ -16,13 +21,11 @@ TOOL_DESC = (
     '<tool name="packages">check curl</tool>'
 )
 
-# Package name: alphanumeric, hyphens, dots, plus, colon (for arch qualifiers)
-PKG_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9.+\-:]*$")
+PKG_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9.+\-:@/]*$")
 MAX_OUTPUT = 5000
 
 
 def _validate_pkg(name):
-    """Validate package name."""
     if not name:
         return None, "No package name provided."
     if len(name) > 200:
@@ -33,11 +36,8 @@ def _validate_pkg(name):
 
 
 def _run_cmd(cmd, timeout=15):
-    """Run a command and return output."""
     try:
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=timeout,
-        )
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
         output = result.stdout
         if result.stderr:
             output += "\n" + result.stderr
@@ -50,8 +50,9 @@ def _run_cmd(cmd, timeout=15):
         return f"Error: {e}"
 
 
-def _search(query):
-    """Search available packages."""
+# ─── apt/dpkg (Linux) ───
+
+def _search_apt(query):
     pkg, err = _validate_pkg(query)
     if err:
         return err
@@ -61,12 +62,10 @@ def _search(query):
     return f"Search results for '{pkg}':\n{output}" if output else f"No results for '{pkg}'"
 
 
-def _info(name):
-    """Show package info."""
+def _info_apt(name):
     pkg, err = _validate_pkg(name)
     if err:
         return err
-    # Try apt show first (more detail), fall back to dpkg
     output = _run_cmd(["apt", "show", pkg])
     if "No packages found" in output or not output:
         output = _run_cmd(["dpkg-query", "-s", pkg])
@@ -75,8 +74,7 @@ def _info(name):
     return output if output else f"No info found for '{pkg}'"
 
 
-def _list_installed(filter_str=""):
-    """List installed packages, optionally filtered."""
+def _list_apt(filter_str=""):
     if filter_str:
         pkg, err = _validate_pkg(filter_str)
         if err:
@@ -89,8 +87,7 @@ def _list_installed(filter_str=""):
     return output if output else "No installed packages found"
 
 
-def _check(name):
-    """Check if a package is installed."""
+def _check_apt(name):
     pkg, err = _validate_pkg(name)
     if err:
         return err
@@ -101,15 +98,63 @@ def _check(name):
         lines = result.strip().split("\n")
         version = lines[1] if len(lines) > 1 else "unknown"
         return f"{pkg}: installed (version {version})"
-    else:
-        return f"{pkg}: {result}"
+    return f"{pkg}: {result}"
+
+
+# ─── brew (macOS) ───
+
+def _search_brew(query):
+    pkg, err = _validate_pkg(query)
+    if err:
+        return err
+    output = _run_cmd(["brew", "search", pkg], timeout=30)
+    if len(output) > MAX_OUTPUT:
+        output = output[:MAX_OUTPUT] + "\n... (truncated)"
+    return f"Search results for '{pkg}':\n{output}" if output else f"No results for '{pkg}'"
+
+
+def _info_brew(name):
+    pkg, err = _validate_pkg(name)
+    if err:
+        return err
+    output = _run_cmd(["brew", "info", pkg])
+    if len(output) > MAX_OUTPUT:
+        output = output[:MAX_OUTPUT] + "\n... (truncated)"
+    return output if output else f"No info found for '{pkg}'"
+
+
+def _list_brew(filter_str=""):
+    output = _run_cmd(["brew", "list"])
+    if filter_str:
+        pkg, err = _validate_pkg(filter_str)
+        if err:
+            return err
+        lines = [l for l in output.splitlines() if filter_str.lower() in l.lower()]
+        output = "\n".join(lines) if lines else f"No installed packages matching '{filter_str}'"
+    if len(output) > MAX_OUTPUT:
+        output = output[:MAX_OUTPUT] + "\n... (truncated)"
+    return output if output else "No installed packages found"
+
+
+def _check_brew(name):
+    pkg, err = _validate_pkg(name)
+    if err:
+        return err
+    try:
+        result = subprocess.run(
+            ["brew", "list", pkg], capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode == 0:
+            # Get version
+            ver_out = _run_cmd(["brew", "info", "--json=v1", pkg])
+            return f"{pkg}: installed (via Homebrew)"
+        return f"{pkg}: NOT installed"
+    except Exception:
+        return f"{pkg}: unable to check"
 
 
 def run(args):
-    """Query packages (READ-ONLY).
-
-    Args: 'search <query>', 'info <package>', 'list [filter]', 'check <package>'.
-    """
+    """Query packages (READ-ONLY)."""
     raw = args.strip() if args else ""
     if not raw:
         return (
@@ -124,23 +169,33 @@ def run(args):
     cmd = parts[0].lower()
     arg = parts[1].strip() if len(parts) > 1 else ""
 
-    # Block any install/remove/purge attempts
-    if cmd in ("install", "remove", "purge", "autoremove", "upgrade", "update"):
+    if cmd in ("install", "remove", "purge", "autoremove", "upgrade", "update", "uninstall"):
         return f"Refused: '{cmd}' is not allowed. This tool is READ-ONLY."
 
+    pkg_mgr = get_package_manager()
+    if not pkg_mgr:
+        return "No package manager found. Install apt (Linux) or brew (macOS)."
+
     try:
-        if cmd == "search":
-            return _search(arg)
-        elif cmd == "info" or cmd == "show":
-            return _info(arg)
-        elif cmd == "list":
-            return _list_installed(arg)
-        elif cmd == "check":
-            return _check(arg)
+        if IS_MAC:
+            if cmd == "search":
+                return _search_brew(arg)
+            elif cmd in ("info", "show"):
+                return _info_brew(arg)
+            elif cmd == "list":
+                return _list_brew(arg)
+            elif cmd == "check":
+                return _check_brew(arg)
         else:
-            return (
-                f"Unknown subcommand: {cmd}\n"
-                "Available: search, info, list, check"
-            )
+            if cmd == "search":
+                return _search_apt(arg)
+            elif cmd in ("info", "show"):
+                return _info_apt(arg)
+            elif cmd == "list":
+                return _list_apt(arg)
+            elif cmd == "check":
+                return _check_apt(arg)
+
+        return f"Unknown subcommand: {cmd}\nAvailable: search, info, list, check"
     except Exception as e:
         return f"packages error: {e}"

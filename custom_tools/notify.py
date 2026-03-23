@@ -1,12 +1,12 @@
-"""BOLT custom tool — desktop notifications via notify-send.
+"""BOLT custom tool — desktop notifications.
 
-Wraps notify-send for easy desktop notifications.
+Cross-platform: Linux (notify-send), macOS (osascript).
 Supports body-only, title+body, or urgency+title+body.
 500 char cap per field.
 """
 
-import subprocess
-import shutil
+import os
+import sys
 
 TOOL_NAME = "notify"
 TOOL_DESC = (
@@ -18,32 +18,21 @@ TOOL_DESC = (
 
 MAX_FIELD_LEN = 500
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+from platform_utils import send_notification
+
 
 def _truncate(text, limit=MAX_FIELD_LEN):
-    """Truncate text to limit."""
     if len(text) > limit:
         return text[:limit] + "..."
     return text
 
 
 def run(args):
-    """Send a desktop notification.
-
-    Args formats:
-      - 'body' — notification with just a body
-      - 'title\\nbody' — notification with title and body
-      - 'urgency\\ntitle\\nbody' — with urgency level (low/normal/critical)
-    """
+    """Send a desktop notification."""
     raw = args.strip() if args else ""
     if not raw:
         return "No message provided. Usage: <tool name=\"notify\">your message</tool>"
-
-    if not shutil.which("notify-send"):
-        return (
-            "notify-send not found. Install with:\n"
-            "  sudo apt install libnotify-bin    # Debian/Ubuntu\n"
-            "  sudo pacman -S libnotify          # Arch/SteamOS"
-        )
 
     lines = raw.split("\n", 2)
     urgency = "normal"
@@ -66,13 +55,7 @@ def run(args):
             body = _truncate(lines[1] + "\n" + lines[2])
 
     try:
-        cmd = ["notify-send", "-u", urgency, title, body]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-        if result.returncode != 0:
-            err = result.stderr.strip() if result.stderr else "unknown error"
-            return f"notify-send failed: {err}"
-        return f"Notification sent: [{urgency}] {title}"
-    except subprocess.TimeoutExpired:
-        return "notify-send timed out"
+        success, message = send_notification(title, body, urgency)
+        return message
     except Exception as e:
         return f"notify error: {e}"

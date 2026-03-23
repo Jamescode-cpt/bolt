@@ -251,12 +251,10 @@ fi
 # ─── Hardware detection & tier selection ───
 
 RAM_GB=$(python3 -c "
+import sys; sys.path.insert(0, '$BOLT_DIR')
 try:
-    with open('/proc/meminfo') as f:
-        for line in f:
-            if line.startswith('MemTotal:'):
-                print(int(line.split()[1]) // 1024 // 1024)
-                break
+    import env
+    print(env.RAM_GB)
 except:
     print(8)
 " 2>/dev/null)

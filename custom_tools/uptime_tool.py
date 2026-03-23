@@ -1,23 +1,25 @@
 """
 BOLT Custom Tool: uptime
 Shows system uptime, load averages, and boot time.
-Reads from /proc/uptime and /proc/loadavg — no external deps.
+Cross-platform: Linux (/proc) and macOS (sysctl).
 """
+
+import os
+import sys
 
 TOOL_NAME = "uptime"
 TOOL_DESC = "Show system uptime, load averages, and boot time. No args needed."
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+from platform_utils import get_uptime_secs
+
 
 def run(args):
-    """Reads /proc/uptime and /proc/loadavg, returns a formatted summary."""
+    """Get uptime, load averages, and boot time."""
     try:
-        # --- uptime ---
-        try:
-            with open("/proc/uptime", "r") as f:
-                raw = f.read().strip().split()
-            uptime_secs = float(raw[0])
-        except (FileNotFoundError, PermissionError, ValueError) as e:
-            return f"Error reading /proc/uptime: {e}"
+        uptime_secs = get_uptime_secs()
+        if uptime_secs is None:
+            return "Error: unable to determine system uptime"
 
         days = int(uptime_secs // 86400)
         hours = int((uptime_secs % 86400) // 3600)
@@ -33,15 +35,14 @@ def run(args):
         parts.append(f"{seconds}s")
         uptime_str = " ".join(parts)
 
-        # --- load averages ---
+        # Load averages — cross-platform via os.getloadavg()
         try:
-            with open("/proc/loadavg", "r") as f:
-                load_raw = f.read().strip().split()
-            load_str = f"{load_raw[0]} {load_raw[1]} {load_raw[2]}"
-        except (FileNotFoundError, PermissionError, ValueError) as e:
-            load_str = f"unavailable ({e})"
+            load = os.getloadavg()
+            load_str = f"{load[0]:.2f} {load[1]:.2f} {load[2]:.2f}"
+        except (OSError, AttributeError):
+            load_str = "unavailable"
 
-        # --- boot time ---
+        # Boot time
         import datetime
         try:
             boot_ts = datetime.datetime.now() - datetime.timedelta(seconds=uptime_secs)

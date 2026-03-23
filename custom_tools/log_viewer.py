@@ -1,6 +1,7 @@
 """
 BOLT Custom Tool: Log Viewer
 Read-only log inspection — system logs, BOLT timeline, arbitrary log files.
+Cross-platform: Linux (journalctl, syslog), macOS (log show, system.log).
 File paths restricted to the user's home directory.
 """
 
@@ -8,11 +9,15 @@ import os
 import sqlite3
 import subprocess
 import re
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+from platform_utils import IS_MAC, get_log_command
 
 TOOL_NAME = "logs"
 TOOL_DESC = (
     "View and search log files. Commands:\n"
-    "  system                    - recent system journal entries (last 30 lines)\n"
+    "  system                    - recent system log entries\n"
     "  bolt                      - BOLT's own timeline from its database\n"
     "  file <path>               - tail a log file (last 50 lines)\n"
     "  search <pattern> <path>   - search/grep a log file for a pattern"
@@ -23,7 +28,6 @@ BOLT_DB = os.path.expanduser("~/bolt/bolt.db")
 
 
 def _validate_path(path, label="Path"):
-    """Ensure path is under the user's home directory."""
     resolved = os.path.realpath(os.path.expanduser(path))
     if not resolved.startswith(ALLOWED_PREFIX):
         raise ValueError(
@@ -33,29 +37,33 @@ def _validate_path(path, label="Path"):
 
 
 def _cmd_system():
-    """Show recent system journal entries."""
-    # Try journalctl first (systemd), fall back to /var/log/syslog
-    try:
-        result = subprocess.run(
-            ["journalctl", "--no-pager", "-n", "30", "--output=short-iso"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            lines = result.stdout.strip()
-            return f"System journal (last 30 entries):\n{'=' * 60}\n{lines}"
-        # journalctl might fail without privileges, fall through
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        pass
+    """Show recent system log entries (cross-platform)."""
+    log_cmd = get_log_command()
+    if log_cmd:
+        try:
+            result = subprocess.run(
+                log_cmd, capture_output=True, text=True, timeout=15,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                lines = result.stdout.strip()
+                # Truncate if huge
+                if len(lines) > 10000:
+                    lines = lines[:10000] + "\n... (truncated)"
+                label = "System journal" if not IS_MAC else "System log"
+                return f"{label} (recent entries):\n{'=' * 60}\n{lines}"
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
 
-    # Fallback: try reading syslog (read-only, may need permission)
-    syslog_paths = ["/var/log/syslog", "/var/log/messages"]
+    # Fallback: try reading common log files
+    if IS_MAC:
+        syslog_paths = ["/var/log/system.log", "/var/log/install.log"]
+    else:
+        syslog_paths = ["/var/log/syslog", "/var/log/messages"]
+
     for logpath in syslog_paths:
         if os.path.isfile(logpath):
             try:
                 with open(logpath, "r") as f:
-                    # Read last 30 lines efficiently
                     all_lines = f.readlines()
                     tail = all_lines[-30:]
                 return (
@@ -65,12 +73,12 @@ def _cmd_system():
                 )
             except PermissionError:
                 continue
-            except IOError as e:
+            except IOError:
                 continue
 
     return (
         "Could not read system logs.\n"
-        "journalctl returned no data and /var/log/syslog is not accessible.\n"
+        "Log command returned no data and log files are not accessible.\n"
         "This may require elevated permissions."
     )
 
@@ -85,7 +93,6 @@ def _cmd_bolt():
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
 
-        # Check which tables exist
         cursor.execute(
             "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
         )
@@ -93,11 +100,8 @@ def _cmd_bolt():
 
         lines = [f"BOLT Timeline (from {BOLT_DB})", "=" * 60]
 
-        # Try timeline table first
         if "timeline" in tables:
-            cursor.execute(
-                "SELECT * FROM timeline ORDER BY rowid DESC LIMIT 30"
-            )
+            cursor.execute("SELECT * FROM timeline ORDER BY rowid DESC LIMIT 30")
             rows = cursor.fetchall()
             if rows:
                 lines.append(f"\n--- timeline (last 30 entries) ---")
@@ -112,11 +116,8 @@ def _cmd_bolt():
             else:
                 lines.append("timeline table exists but is empty.")
 
-        # Also check messages table for recent activity
         if "messages" in tables:
-            cursor.execute(
-                "SELECT * FROM messages ORDER BY rowid DESC LIMIT 15"
-            )
+            cursor.execute("SELECT * FROM messages ORDER BY rowid DESC LIMIT 15")
             rows = cursor.fetchall()
             if rows:
                 lines.append(f"\n--- messages (last 15) ---")
@@ -126,18 +127,14 @@ def _cmd_bolt():
                     for col in columns:
                         val = row[col]
                         if val is not None:
-                            # Truncate long message content
                             sval = str(val)
                             if len(sval) > 120:
                                 sval = sval[:120] + "..."
                             entry_parts.append(f"{col}={sval}")
                     lines.append("  " + " | ".join(entry_parts))
 
-        # Show summaries if available
         if "summaries" in tables:
-            cursor.execute(
-                "SELECT * FROM summaries ORDER BY rowid DESC LIMIT 5"
-            )
+            cursor.execute("SELECT * FROM summaries ORDER BY rowid DESC LIMIT 5")
             rows = cursor.fetchall()
             if rows:
                 lines.append(f"\n--- summaries (last 5) ---")
@@ -209,7 +206,6 @@ def _cmd_search(rest):
     if not os.path.isfile(filepath):
         return f"Error: file not found: {filepath}"
 
-    # Validate regex pattern
     try:
         compiled = re.compile(pattern, re.IGNORECASE)
     except re.error as e:
@@ -221,7 +217,6 @@ def _cmd_search(rest):
             for line_num, line in enumerate(f, 1):
                 if compiled.search(line):
                     matches.append(f"  {line_num:>6}  {line.rstrip()}")
-                    # Cap results to prevent huge output
                     if len(matches) >= 200:
                         matches.append(f"  ... (truncated at 200 matches)")
                         break

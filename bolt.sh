@@ -1,3 +1,3 @@
-#!/bin/bash
-cd /home/mobilenode/bolt
-python3 bolt.py --web "$@"
+#!/usr/bin/env bash
+# BOLT — quick web launcher
+cd "$(dirname "$0")" && python3 bolt.py --web "$@"

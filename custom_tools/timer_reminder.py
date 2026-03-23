@@ -8,11 +8,14 @@ Max 100 active timers. Completely isolated from Ollama/SQLite/workers.
 import json
 import os
 import re
-import subprocess
+import sys
 import threading
 import time
 import uuid
 from datetime import datetime, timedelta
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+from platform_utils import send_notification
 
 TOOL_NAME = "timer"
 TOOL_DESC = (
@@ -112,13 +115,9 @@ def _parse_datetime(text):
 
 
 def _fire_notification(label):
-    """Send a desktop notification for a fired timer."""
+    """Send a desktop notification for a fired timer (cross-platform)."""
     try:
-        subprocess.Popen(
-            ["notify-send", "-u", "critical", "BOLT Timer", label],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        send_notification("BOLT Timer", label, "critical")
     except Exception:
         pass  # Best effort — notification system might not be available
 

@@ -2,7 +2,7 @@
 
 **Built On Local Terrain** — a local-first AI companion that runs on your machine.
 
-BOLT is a hive-mind AI framework powered by Ollama. One personality, multiple brain regions (models) that activate based on what you need. It detects your hardware, pulls the right models, and self-configures. Local by default — cloud optional.
+BOLT is a hive-mind AI framework powered by Ollama + MLX. One personality, multiple brain regions (models) that activate based on what you need. It detects your hardware, pulls the right models, and self-configures. Runs on Linux and macOS (Apple Silicon). Local by default — cloud optional.
 
 ## Quick Install
 
@@ -25,8 +25,9 @@ The installer walks you through everything with familiar dialog boxes — no typ
 ## Requirements
 
 - **Python 3.10+**
-- **Ollama** (installed automatically)
+- **Ollama** (installed automatically) or **MLX** (auto-installed on Apple Silicon)
 - **8GB+ RAM** (more RAM = bigger models = smarter BOLT)
+- **Linux** (Debian/Fedora/Arch) or **macOS** (Apple Silicon M1+)
 
 | RAM | Tier | What You Get |
 |-----|------|-------------|
@@ -134,19 +135,21 @@ You can keep chatting the entire time — the 1.5b router stays loaded throughou
 ## Architecture
 
 ```
-bolt.py          CLI entry point, commands, main loop
-brain.py         Router + model orchestration + tool loop
-identity.py      User profile learning, context relay
-pipeline.py      Multi-model build pipeline (background, parallel)
-tools.py         Tool registry + 58 built-in/custom tools
-memory.py        SQLite persistence (messages, summaries, tasks)
-workers.py       Background summarizer, task tracker, model heartbeat
-config.py        Model roster, prompts, identity system
-env.py           Hardware detection, dynamic paths, model tiers
-setup.py         First-run setup wizard
-cloud.py         Provider-agnostic cloud LLM integration
-web.py           Flask web server + SSE streaming
-custom_tools/    50+ drop-in tool plugins
+bolt.py            CLI entry point, commands, main loop
+brain.py           Router + model orchestration + tool loop (dual-engine)
+identity.py        User profile learning, context relay
+pipeline.py        Multi-model build pipeline (background, parallel)
+tools.py           Tool registry + 58 built-in/custom tools
+memory.py          SQLite persistence (messages, summaries, tasks)
+workers.py         Background summarizer, task tracker, model heartbeat
+config.py          Model roster, prompts, identity system
+env.py             Hardware detection, dynamic paths, model tiers
+setup.py           First-run setup wizard
+cloud.py           Provider-agnostic cloud LLM integration
+web.py             Flask web server + SSE streaming
+platform_utils.py  Cross-platform OS detection + helpers
+mlx_engine.py      Apple Silicon native inference via MLX
+custom_tools/      50+ drop-in tool plugins
 ```
 
 ### Identity System
@@ -169,4 +172,4 @@ All tools are plugins — drop a `.py` file in `custom_tools/` with `TOOL_NAME`,
 
 ## License
 
-MIT — Created by James Connolly, [CPTRI](https://github.com/Jamescode-cpt)
+MIT

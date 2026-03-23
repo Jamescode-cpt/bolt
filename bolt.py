@@ -116,6 +116,15 @@ def banner():
     pad = W - _visible_len(cloud_status)
     print(f"  {B5}║{RST}{cloud_status}{' ' * max(pad, 0)}{B5}║{RST}")
 
+    # Engine status line
+    import mlx_engine as _mlx_e
+    if _mlx_e.is_available():
+        engine_line = f"    {DIM}{B4}│{RST} {G1}Engine: MLX{RST} {DIM}(Apple Silicon native){RST}"
+    else:
+        engine_line = f"    {DIM}{B4}│{RST} {DIM}Engine: Ollama{RST}"
+    pad = W - _visible_len(engine_line)
+    print(f"  {B5}║{RST}{engine_line}{' ' * max(pad, 0)}{B5}║{RST}")
+
     print(f"  {B5}║{RST}{' ' * W}{B5}║{RST}")
     print(f"  {B5}╚{'━' * W}╝{RST}")
     print()
@@ -179,6 +188,7 @@ def handle_command(cmd, session_id):
             ("/memory",      "what BOLT remembers from conversations"),
             ("/task",        "show/manage tasks"),
             ("/tools",       "list available tools"),
+            ("/engine",      "show inference engine (MLX/Ollama)"),
             ("/web",         "launch web UI (access from phone)"),
             ("/clear",       "new session (profile persists)"),
             ("/quit",        "save and exit"),
@@ -282,6 +292,26 @@ def handle_command(cmd, session_id):
             print(f"\n  {Y1}⚡{RST} {B7}Build pipeline is running — status updates print as phases complete.{RST}\n")
         else:
             print(f"\n  {Y1}⚡{RST} {B7}No build running.{RST}\n")
+        return True
+
+    if cmd == "/engine":
+        print(f"\n  {BOLD}{B6}Inference Engine{RST}")
+        print(f"  {DIM}{B4}{'─' * 40}{RST}")
+        import mlx_engine as _mlx_e
+        if _mlx_e.is_available():
+            status = _mlx_e.get_status()
+            print(f"  {G1}Engine:{RST}  MLX (Apple Silicon native)")
+            print(f"  {Y2}Loaded:{RST}  {status.get('loaded_model', 'none')}")
+            print(f"  {DIM}Models mapped: {len(_mlx_e.list_available_models())}{RST}")
+        else:
+            print(f"  {Y2}Engine:{RST}  Ollama ({brain.OLLAMA_URL})")
+            if _mlx_e._checked:
+                from platform_utils import IS_MAC
+                if IS_MAC:
+                    print(f"  {DIM}MLX not installed. Install: pip install mlx-lm{RST}")
+                else:
+                    print(f"  {DIM}MLX only available on Apple Silicon Macs{RST}")
+        print()
         return True
 
     if cmd == "/web" or cmd.startswith("/web "):

@@ -1,12 +1,14 @@
 """BOLT custom tool — text-to-speech.
 
-Tries espeak > espeak-ng > spd-say > piper in order.
+Cross-platform: macOS (say), Linux (espeak, espeak-ng, spd-say, piper).
 Non-blocking (subprocess.Popen). Speed/pitch options.
 1000 char text cap.
 """
 
 import subprocess
 import shutil
+import os
+import sys
 
 TOOL_NAME = "speak"
 TOOL_DESC = (
@@ -18,18 +20,13 @@ TOOL_DESC = (
 
 MAX_TEXT = 1000
 
-# TTS backends in preference order: (binary, build_cmd_func, description)
-BACKENDS = [
-    "espeak",
-    "espeak-ng",
-    "spd-say",
-    "piper",
-]
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+from platform_utils import get_tts_backends, get_audio_player, IS_MAC
 
 
 def _find_backend():
     """Find the first available TTS backend."""
-    for name in BACKENDS:
+    for name in get_tts_backends():
         if shutil.which(name):
             return name
     return None
@@ -37,7 +34,15 @@ def _find_backend():
 
 def _build_cmd(backend, text, speed=None, pitch=None):
     """Build the command for the given backend."""
-    if backend == "espeak":
+    if backend == "say":
+        # macOS built-in
+        cmd = ["say"]
+        if speed:
+            cmd += ["-r", str(speed)]
+        cmd.append(text)
+        return cmd
+
+    elif backend == "espeak":
         cmd = ["espeak"]
         if speed:
             cmd += ["-s", str(speed)]
@@ -58,36 +63,26 @@ def _build_cmd(backend, text, speed=None, pitch=None):
     elif backend == "spd-say":
         cmd = ["spd-say"]
         if speed:
-            # spd-say uses -r for rate (-100 to 100)
-            # Map WPM roughly: 175 WPM is default (0), scale from there
             rate = max(-100, min(100, int((int(speed) - 175) / 2)))
             cmd += ["-r", str(rate)]
         if pitch:
-            # spd-say uses -p for pitch (-100 to 100)
             pitch_val = max(-100, min(100, int(pitch)))
             cmd += ["-p", str(pitch_val)]
         cmd.append(text)
         return cmd
 
     elif backend == "piper":
-        # Piper reads from stdin and pipes to aplay
-        # This is handled differently
         return ["piper", "--output-raw"]
 
     return None
 
 
 def run(args):
-    """Speak text aloud (non-blocking).
-
-    Args: text to speak, or 'speed=N\\npitch=N\\ntext to speak'.
-    Options on separate lines before the text: speed=N (WPM), pitch=N (Hz).
-    """
+    """Speak text aloud (non-blocking)."""
     raw = args.strip() if args else ""
     if not raw:
         return 'Usage: <tool name="speak">text to speak</tool>'
 
-    # Parse options from leading lines
     lines = raw.split("\n")
     speed = None
     pitch = None
@@ -117,6 +112,8 @@ def run(args):
 
     backend = _find_backend()
     if not backend:
+        if IS_MAC:
+            return "No TTS engine found — 'say' should be built-in on macOS."
         return (
             "No TTS engine found. Install one of these:\n\n"
             "  espeak (recommended, lightest):\n"
@@ -132,21 +129,31 @@ def run(args):
 
     try:
         if backend == "piper":
-            # Piper needs piping through aplay
-            if not shutil.which("aplay"):
-                return "piper found but aplay not available. Install: sudo apt install alsa-utils"
+            audio_player = get_audio_player()
+            if not shutil.which(audio_player):
+                pkg = "alsa-utils" if not IS_MAC else "N/A"
+                return f"piper found but {audio_player} not available. Install: sudo apt install {pkg}"
             piper_proc = subprocess.Popen(
                 ["piper", "--output-raw"],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
             )
-            subprocess.Popen(
-                ["aplay", "-r", "22050", "-f", "S16_LE", "-t", "raw", "-"],
-                stdin=piper_proc.stdout,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
+            if IS_MAC:
+                # afplay can't pipe raw audio easily, use sox or ffplay as fallback
+                subprocess.Popen(
+                    ["afplay", "-"],
+                    stdin=piper_proc.stdout,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            else:
+                subprocess.Popen(
+                    ["aplay", "-r", "22050", "-f", "S16_LE", "-t", "raw", "-"],
+                    stdin=piper_proc.stdout,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
             piper_proc.stdin.write(text.encode())
             piper_proc.stdin.close()
             return f"Speaking ({backend}, {len(text)} chars)"

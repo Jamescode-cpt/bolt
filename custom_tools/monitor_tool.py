@@ -1,12 +1,12 @@
 """BOLT custom tool — system resource monitor with threshold alerts.
 
-Pure stdlib — reads /proc, /sys, and df directly. No external deps.
+Cross-platform: Linux (/proc, /sys) and macOS (sysctl, vm_stat).
 Persists alert thresholds to ~/bolt/monitor_thresholds.json.
 """
 
 import json
 import os
-import time
+import sys
 
 TOOL_NAME = "monitor"
 TOOL_DESC = (
@@ -19,6 +19,9 @@ TOOL_DESC = (
 HOME = os.path.expanduser("~")
 THRESHOLDS_FILE = os.path.join(HOME, "bolt", "monitor_thresholds.json")
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+from platform_utils import get_cpu_usage, get_ram_info, get_temps
+
 DEFAULT_THRESHOLDS = {
     "cpu": 90.0,
     "ram": 85.0,
@@ -27,17 +30,7 @@ DEFAULT_THRESHOLDS = {
 }
 
 
-def _read_file(path):
-    """Read a file, return contents or None."""
-    try:
-        with open(path, "r") as f:
-            return f.read().strip()
-    except Exception:
-        return None
-
-
 def _load_thresholds():
-    """Load thresholds from file, merging with defaults."""
     thresholds = dict(DEFAULT_THRESHOLDS)
     try:
         if os.path.exists(THRESHOLDS_FILE):
@@ -56,9 +49,7 @@ def _load_thresholds():
 
 
 def _save_thresholds(thresholds):
-    """Persist thresholds to file."""
     try:
-        # Validate path stays under home
         real_path = os.path.realpath(THRESHOLDS_FILE)
         if not real_path.startswith(HOME):
             return "Error: threshold file path escapes home directory."
@@ -71,75 +62,26 @@ def _save_thresholds(thresholds):
 
 
 def _check_cpu(thresholds):
-    """Measure CPU usage over 0.5s from /proc/stat."""
-    def read_stat():
-        raw = _read_file("/proc/stat")
-        if not raw:
-            return None
-        for line in raw.splitlines():
-            if line.startswith("cpu "):
-                vals = list(map(int, line.split()[1:]))
-                idle = vals[3] + (vals[4] if len(vals) > 4 else 0)
-                total = sum(vals)
-                return total, idle
-        return None
+    usage, cores, load_str = get_cpu_usage()
+    if usage is None:
+        return f"CPU: unable to measure ({cores} cores)", False
 
-    s1 = read_stat()
-    if not s1:
-        return "CPU: unable to read /proc/stat", False
-    time.sleep(0.5)
-    s2 = read_stat()
-    if not s2:
-        return "CPU: unable to read /proc/stat", False
-
-    d_total = s2[0] - s1[0]
-    d_idle = s2[1] - s1[1]
-    if d_total == 0:
-        return "CPU: 0.0%", False
-    usage = (1.0 - d_idle / d_total) * 100.0
-
-    # Core count
-    cores = 0
-    raw = _read_file("/proc/stat")
-    if raw:
-        for line in raw.splitlines():
-            if line.startswith("cpu") and line[3:4].isdigit():
-                cores += 1
-
-    # Load average
-    loadavg = _read_file("/proc/loadavg")
-    load_str = ""
-    if loadavg:
-        parts = loadavg.split()[:3]
-        load_str = f"  Load: {' '.join(parts)}"
-
+    load_part = f"  Load: {load_str}" if load_str else ""
     alert = usage >= thresholds["cpu"]
     status = "ALERT" if alert else "OK"
-    line = f"CPU: {usage:.1f}% ({cores} cores){load_str}  [{status}]"
+    line = f"CPU: {usage:.1f}% ({cores} cores){load_part}  [{status}]"
     if alert:
         line += f"  *** ABOVE {thresholds['cpu']:.0f}% THRESHOLD ***"
     return line, alert
 
 
 def _check_ram(thresholds):
-    """Check RAM usage from /proc/meminfo."""
-    raw = _read_file("/proc/meminfo")
-    if not raw:
-        return "RAM: unable to read /proc/meminfo", False
+    info = get_ram_info()
+    if not info:
+        return "RAM: unable to read memory info", False
 
-    info = {}
-    for line in raw.splitlines():
-        parts = line.split()
-        if len(parts) >= 2:
-            key = parts[0].rstrip(":")
-            try:
-                info[key] = int(parts[1])
-            except ValueError:
-                pass
-
-    total_kb = info.get("MemTotal", 0)
-    avail_kb = info.get("MemAvailable", 0)
-    used_kb = total_kb - avail_kb
+    total_kb = info["total_kb"]
+    used_kb = info["used_kb"]
 
     def fmt(kb):
         if kb > 1048576:
@@ -154,19 +96,14 @@ def _check_ram(thresholds):
     if alert:
         line += f"  *** ABOVE {thresholds['ram']:.0f}% THRESHOLD ***"
 
-    # Swap info
-    swap_total = info.get("SwapTotal", 0)
-    swap_free = info.get("SwapFree", 0)
-    swap_used = swap_total - swap_free
-    if swap_total:
-        swap_pct = swap_used / swap_total * 100
-        line += f"\nSwap: {fmt(swap_used)} / {fmt(swap_total)} ({swap_pct:.0f}%)"
+    if info["swap_total_kb"]:
+        swap_pct = info["swap_used_kb"] / info["swap_total_kb"] * 100
+        line += f"\nSwap: {fmt(info['swap_used_kb'])} / {fmt(info['swap_total_kb'])} ({swap_pct:.0f}%)"
 
     return line, alert
 
 
 def _check_disk(thresholds):
-    """Check disk usage via os.statvfs."""
     try:
         st = os.statvfs(HOME)
         total = st.f_blocks * st.f_frsize
@@ -191,43 +128,27 @@ def _check_disk(thresholds):
 
 
 def _check_temps(thresholds):
-    """Check temperatures from /sys/class/thermal/."""
-    base = "/sys/class/thermal"
-    if not os.path.isdir(base):
-        return "Temps: no thermal sysfs found", False
+    temp_str = get_temps()
 
-    results = []
+    # Try to parse temperatures for threshold checking
     any_alert = False
-
-    for entry in sorted(os.listdir(base)):
-        if not entry.startswith("thermal_zone"):
-            continue
-        path = os.path.join(base, entry)
-        temp_raw = _read_file(os.path.join(path, "temp"))
-        type_name = _read_file(os.path.join(path, "type")) or entry
-        if temp_raw:
+    if "°C" in temp_str or "°C" in temp_str:
+        import re
+        for match in re.finditer(r'(\d+\.?\d*)\s*°?C', temp_str):
             try:
-                temp_c = int(temp_raw) / 1000.0
-                alert = temp_c >= thresholds["temp"]
-                if alert:
+                temp_c = float(match.group(1))
+                if temp_c >= thresholds["temp"]:
                     any_alert = True
-                marker = " *** HOT ***" if alert else ""
-                results.append(f"  {type_name}: {temp_c:.1f}C{marker}")
             except ValueError:
                 pass
 
-    if not results:
-        return "Temps: no thermal zones reporting", False
-
     status = "ALERT" if any_alert else "OK"
-    header = f"Temps [{status}]:"
     if any_alert:
-        header += f"  (threshold: {thresholds['temp']:.0f}C)"
-    return header + "\n" + "\n".join(results), any_alert
+        return f"Temps [{status}] (threshold: {thresholds['temp']:.0f}°C):\n{temp_str}", True
+    return temp_str, False
 
 
 def _cmd_check():
-    """Full one-shot resource check with threshold alerts."""
     thresholds = _load_thresholds()
 
     sections = []
@@ -268,19 +189,17 @@ def _cmd_check():
 
 
 def _cmd_thresholds():
-    """Show current alert thresholds."""
     thresholds = _load_thresholds()
     lines = ["Current alert thresholds:"]
     lines.append(f"  CPU usage:    {thresholds['cpu']:.0f}%")
     lines.append(f"  RAM usage:    {thresholds['ram']:.0f}%")
     lines.append(f"  Disk usage:   {thresholds['disk']:.0f}%")
-    lines.append(f"  Temperature:  {thresholds['temp']:.0f}C")
+    lines.append(f"  Temperature:  {thresholds['temp']:.0f}°C")
     lines.append(f"\nStored in: {THRESHOLDS_FILE}")
     return "\n".join(lines)
 
 
 def _cmd_set(rest):
-    """Set a threshold value. Format: set <metric> <value>"""
     parts = rest.split()
     if len(parts) < 2:
         return (
@@ -310,15 +229,11 @@ def _cmd_set(rest):
     if err:
         return err
 
-    unit = "C" if metric == "temp" else "%"
+    unit = "°C" if metric == "temp" else "%"
     return f"Threshold updated: {metric} {old_value:.0f}{unit} -> {value:.0f}{unit}"
 
 
 def run(args):
-    """System resource monitor with threshold alerts.
-
-    Args: 'check' | 'thresholds' | 'set <metric> <value>'
-    """
     raw = args.strip() if args else "check"
 
     try:

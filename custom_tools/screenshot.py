@@ -1,13 +1,13 @@
 """BOLT custom tool — take screenshots.
 
-Tries available screenshot tools in order: grim (Wayland) > gnome-screenshot > scrot > import (ImageMagick).
-Returns clear install instructions if none are found.
+Cross-platform: macOS (screencapture), Linux (grim, scrot, gnome-screenshot, etc.).
 """
 
 import subprocess
 import os
 import shutil
 import time
+import sys
 
 TOOL_NAME = "screenshot"
 TOOL_DESC = (
@@ -18,20 +18,13 @@ TOOL_DESC = (
 
 SCREENSHOT_DIR = os.path.join(os.path.expanduser("~"), "screenshots")
 
-# Screenshot tools in preference order: (binary, args_template, description)
-# {output} will be replaced with the output file path
-TOOLS = [
-    ("grim", ["{output}"], "grim (Wayland)"),
-    ("gnome-screenshot", ["-f", "{output}"], "gnome-screenshot"),
-    ("scrot", ["{output}"], "scrot (X11)"),
-    ("import", ["-window", "root", "{output}"], "ImageMagick import"),
-    ("spectacle", ["-b", "-n", "-o", "{output}"], "KDE Spectacle"),
-]
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+from platform_utils import get_screenshot_tools, IS_MAC
 
 
 def _find_tool():
     """Find the first available screenshot tool."""
-    for binary, args_tmpl, desc in TOOLS:
+    for binary, args_tmpl, desc in get_screenshot_tools():
         if shutil.which(binary):
             return binary, args_tmpl, desc
     return None, None, None
@@ -46,29 +39,26 @@ def run(args):
         binary, args_tmpl, desc = _find_tool()
 
         if binary is None:
+            if IS_MAC:
+                return "screencapture not found — this should be built-in on macOS."
             return (
                 "No screenshot tool found. Install one of these:\n\n"
-                "  Wayland (recommended for ROG Ally X):\n"
-                "    sudo pacman -S grim      # Arch/SteamOS\n"
-                "    sudo apt install grim     # Debian/Ubuntu\n\n"
+                "  Wayland:\n"
+                "    sudo apt install grim          # Wayland\n\n"
                 "  X11:\n"
-                "    sudo pacman -S scrot\n"
                 "    sudo apt install scrot\n\n"
                 "  Desktop environment:\n"
                 "    gnome-screenshot (GNOME)\n"
                 "    spectacle (KDE)\n\n"
                 "  Universal:\n"
-                "    sudo pacman -S imagemagick  # provides 'import' command"
+                "    sudo apt install imagemagick   # provides 'import' command"
             )
 
-        # Create output directory
         os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 
-        # Generate filename
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         output_path = os.path.join(SCREENSHOT_DIR, f"screenshot_{timestamp}.png")
 
-        # Build command
         cmd_args = [binary] + [a.replace("{output}", output_path) for a in args_tmpl]
 
         result = subprocess.run(

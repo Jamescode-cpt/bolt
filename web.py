@@ -307,6 +307,9 @@ def api_command():
         lines = [f"{name:15s}  {desc}" for name, desc in tl.items()]
         result["message"] = "\n".join(lines) if lines else "No tools loaded."
 
+    elif cmd == "/engine":
+        result["message"] = brain.get_engine_info()
+
     elif cmd == "/build":
         if pipeline.is_pipeline_running():
             result["message"] = "A build is already running. Keep chatting — it'll finish in the background."
@@ -463,8 +466,13 @@ def _graceful_shutdown(delay=0):
     except Exception:
         pass
 
-    # Unload all Ollama models
+    # Unload all models (Ollama + MLX)
     _unload_all_models()
+    try:
+        import mlx_engine
+        mlx_engine.unload_all()
+    except Exception:
+        pass
 
     # Exit the process
     os._exit(0)
@@ -503,31 +511,9 @@ class _HeartbeatMonitor(threading.Thread):
 # ─── Startup ───
 
 def _get_local_ips():
-    """Get all local IPs for the startup banner."""
-    ips = []
-    try:
-        import socket
-        hostname = socket.gethostname()
-        # Get all addresses
-        for info in socket.getaddrinfo(hostname, None, socket.AF_INET):
-            ip = info[4][0]
-            if ip not in ips and ip != "127.0.0.1":
-                ips.append(ip)
-    except Exception:
-        pass
-    # Fallback: parse ip addr
-    if not ips:
-        try:
-            out = subprocess.check_output(["ip", "-4", "addr", "show"], text=True, timeout=5)
-            for line in out.splitlines():
-                line = line.strip()
-                if line.startswith("inet ") and "127.0.0.1" not in line:
-                    ip = line.split()[1].split("/")[0]
-                    if ip not in ips:
-                        ips.append(ip)
-        except Exception:
-            pass
-    return ips
+    """Get all local IPs for the startup banner (cross-platform)."""
+    from platform_utils import get_local_ips
+    return get_local_ips()
 
 
 def _get_tailscale_ip():

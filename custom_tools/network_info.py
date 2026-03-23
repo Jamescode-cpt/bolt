@@ -1,13 +1,14 @@
 """BOLT custom tool — network information.
 
-WiFi signal from /proc/net/wireless, IPs via socket/ip addr,
-ping via subprocess. Host validated with regex (no injection).
+Cross-platform: Linux (/proc, ip) and macOS (airport, ifconfig).
+Ping, WiFi signal, IPs via platform_utils.
 """
 
 import os
 import re
 import socket
 import subprocess
+import sys
 
 TOOL_NAME = "network"
 TOOL_DESC = (
@@ -21,43 +22,19 @@ TOOL_DESC = (
 # Only allow hostnames/IPs — no shell injection
 HOST_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+from platform_utils import get_wifi_info, get_interfaces, get_ping_cmd
+
 
 def _wifi_info():
-    """Read WiFi info from /proc/net/wireless."""
-    try:
-        with open("/proc/net/wireless", "r") as f:
-            lines = f.readlines()
-    except FileNotFoundError:
-        return "No wireless interface found (/proc/net/wireless missing)"
-    except Exception as e:
-        return f"WiFi read error: {e}"
-
-    # Skip first 2 header lines
-    data_lines = [l.strip() for l in lines[2:] if l.strip()]
-    if not data_lines:
-        return "No wireless interfaces active"
-
-    results = []
-    for line in data_lines:
-        parts = line.split()
-        if len(parts) < 4:
-            continue
-        iface = parts[0].rstrip(":")
-        # Quality is in column 2, signal level in column 3
-        quality = parts[2].rstrip(".")
-        signal = parts[3].rstrip(".")
-        results.append(f"  {iface}: quality={quality} signal={signal} dBm")
-
-    if not results:
-        return "No wireless data available"
-    return "WiFi:\n" + "\n".join(results)
+    return get_wifi_info()
 
 
 def _ip_info():
     """Get local and public-facing IP addresses."""
     results = []
 
-    # Local IP via socket trick
+    # Local IP via socket trick (cross-platform)
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.settimeout(2)
@@ -68,22 +45,10 @@ def _ip_info():
     except Exception:
         results.append("  Local IP: unavailable")
 
-    # All interface IPs via ip addr
-    try:
-        out = subprocess.run(
-            ["ip", "-brief", "addr"], capture_output=True, text=True, timeout=5,
-        )
-        if out.returncode == 0 and out.stdout.strip():
-            results.append("  Interfaces:")
-            for line in out.stdout.strip().splitlines():
-                parts = line.split()
-                if len(parts) >= 3:
-                    iface = parts[0]
-                    state = parts[1]
-                    addrs = " ".join(parts[2:])
-                    results.append(f"    {iface} ({state}): {addrs}")
-    except Exception:
-        pass
+    # All interface IPs (cross-platform)
+    ifaces = get_interfaces()
+    if ifaces:
+        results.append(ifaces)
 
     return "IPs:\n" + "\n".join(results) if results else "IP info unavailable"
 
@@ -98,9 +63,9 @@ def _ping(host):
         return "Host too long (max 253 chars)"
 
     try:
+        cmd = get_ping_cmd(host)
         result = subprocess.run(
-            ["ping", "-c", "3", "-W", "5", host],
-            capture_output=True, text=True, timeout=20,
+            cmd, capture_output=True, text=True, timeout=20,
         )
         output = result.stdout.strip()
         if result.stderr.strip():

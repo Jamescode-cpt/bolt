@@ -1,4 +1,8 @@
-"""BOLT brain — unified routing, model orchestration, identity injection, and tool loop."""
+"""BOLT brain — unified routing, model orchestration, identity injection, and tool loop.
+
+Dual-engine: auto-detects MLX on Apple Silicon for 2-5x faster inference.
+Falls back to Ollama on Linux or when MLX is unavailable.
+"""
 
 import json
 import requests
@@ -8,7 +12,11 @@ import state
 import tools
 import identity
 import cloud
+import mlx_engine
 from config import MODELS, OLLAMA_URL, ROUTER_PROMPT, MAX_TOOL_LOOPS
+
+# ─── Engine selection ───
+_use_mlx = mlx_engine.is_available()
 
 # Current mode — shared state
 _current_mode = "companion"
@@ -115,7 +123,12 @@ def _classify(user_message):
     """Silently classify a user message."""
     prompt = ROUTER_PROMPT.format(message=user_message[:500])
     messages = [{"role": "user", "content": prompt}]
-    result = _chat_full(MODELS["router"], messages).strip().lower()
+    router_model = MODELS["router"]
+    # Use MLX for routing if available (faster classification)
+    if _use_mlx and mlx_engine.get_mapped_model(router_model):
+        result = mlx_engine.chat_full(router_model, messages).strip().lower()
+    else:
+        result = _chat_full(router_model, messages).strip().lower()
     for cat in ("cloud", "code_beast", "code_complex", "code_simple", "companion"):
         if cat in result:
             return cat
@@ -225,11 +238,17 @@ def _build_context_with_identity(session_id, mode="companion"):
 
 
 def _generate_with_tools(model_key, context, session_id, stream_callback):
-    """Generate a response, handling tool calls in a loop."""
+    """Generate a response, handling tool calls in a loop.
+
+    Auto-selects MLX (Apple Silicon) or Ollama based on availability.
+    """
     is_cloud = (model_key == "cloud")
     model_name = MODELS[model_key]
     messages = list(context)
     accumulated_text = ""
+
+    # Pick inference engine: MLX on Mac, Ollama everywhere else
+    use_mlx = _use_mlx and not is_cloud and mlx_engine.get_mapped_model(model_name) is not None
 
     for loop_num in range(MAX_TOOL_LOOPS):
         full_text = ""
@@ -248,6 +267,16 @@ def _generate_with_tools(model_key, context, session_id, stream_callback):
                     full_text += "\n[cloud connection lost, partial response]"
                 else:
                     full_text = "[BOLT: Cloud brain failed — try again or I'll go local.]"
+        elif use_mlx:
+            # MLX path — native Apple Silicon inference
+            if stream_callback and loop_num == 0:
+                for chunk in mlx_engine.chat(model_name, messages, stream=True):
+                    full_text += chunk
+                    stream_callback(chunk)
+            else:
+                full_text = mlx_engine.chat_full(model_name, messages)
+                if stream_callback and loop_num > 0:
+                    stream_callback(full_text)
         elif stream_callback and loop_num == 0:
             for chunk in _ollama_chat(model_name, messages, stream=True):
                 full_text += chunk
@@ -289,8 +318,21 @@ def _generate_with_tools(model_key, context, session_id, stream_callback):
     return accumulated_text + full_text if accumulated_text else full_text
 
 
+def get_engine_info():
+    """Return which inference engine is active."""
+    if _use_mlx:
+        status = mlx_engine.get_status()
+        return f"MLX (Apple Silicon native) — loaded: {status.get('loaded_model', 'none')}"
+    return f"Ollama ({OLLAMA_URL})"
+
+
 def preload_daily_trio():
     """Preload models for the current mode."""
+    if _use_mlx:
+        # MLX loads lazily on first use — no preloading needed
+        state.log("preload", "MLX engine active — models load on demand")
+        return
+
     from config import COMPANION_MODELS
     for key in COMPANION_MODELS:
         model_name = MODELS[key]

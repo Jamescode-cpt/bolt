@@ -138,7 +138,11 @@ def check_ollama():
             return False
     except FileNotFoundError:
         _err("Ollama not found!")
-        _print("Install Ollama: curl -fsSL https://ollama.com/install.sh | sh")
+        import platform
+        if platform.system() == "Darwin":
+            _print("Install Ollama: brew install ollama  (or https://ollama.com)")
+        else:
+            _print("Install Ollama: curl -fsSL https://ollama.com/install.sh | sh")
         return False
     except Exception as e:
         _err(f"Error checking Ollama: {e}")

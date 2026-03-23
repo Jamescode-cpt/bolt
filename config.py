@@ -29,7 +29,12 @@ COMPANION_MODELS = ["router", "companion", "worker_heavy"]
 # Models kept loaded during build mode (router always stays)
 BUILD_MODELS = ["router"]
 
-RAM_LIMIT_GB = 20
+# Dynamic RAM limit — uses env detection, overridable
+try:
+    from env import RAM_GB as _detected_ram
+    RAM_LIMIT_GB = _detected_ram
+except Exception:
+    RAM_LIMIT_GB = 16
 OLLAMA_URL = "http://localhost:11434"
 
 # Background worker settings
@@ -85,36 +90,36 @@ Custom tool format (files in custom_tools/):
 
 === YOUR CUSTOM TOOLS (loaded from custom_tools/) ===
   web_search     — DuckDuckGo search (safe, no API key)
-  system_info    — battery %, CPU/RAM/disk usage, temps (reads /proc, /sys)
+  system_info    — battery %, CPU/RAM/disk usage, temps (cross-platform)
   calc           — safe math eval (ast-based, no eval). sqrt, sin, log, pi, etc.
   find_files     — recursive glob file search (restricted to ~/)
   grep_search    — regex search inside files (restricted to ~/)
   http_fetch     — fetch URLs, extract readable text (rate limited, blocked domains)
   git            — git status/log/diff/add/commit/branch (no force push, restricted to ~/)
   processes      — list top processes by CPU/mem, kill by PID (won't kill root/init/self)
-  screenshot     — take screenshot (grim/scrot/etc, graceful if missing)
-  clipboard      — read/write system clipboard (wl-copy/xclip, graceful if missing)
+  screenshot     — take screenshot (cross-platform: screencapture/grim/scrot)
+  clipboard      — read/write system clipboard (cross-platform: pbcopy/wl-copy/xclip)
   timer          — countdown timers + datetime reminders (daemon thread, persists to timers.json)
-  notify         — desktop notifications via notify-send (urgency levels)
-  network        — WiFi signal, IPs, ping (reads /proc, socket, subprocess)
+  notify         — desktop notifications (cross-platform: notify-send/osascript)
+  network        — WiFi signal, IPs, ping (cross-platform)
   archive        — create/extract zip & tar archives (path-restricted to ~/)
   diff           — compare two files (unified diff, path-restricted to ~/)
   weather        — weather via wttr.in (rate limited 10s)
   json_tool      — pretty-print, validate, jq query JSON (path-restricted to ~/)
   cron           — manage user crontab (list/add/remove, no sudo)
-  packages       — query apt/dpkg packages (READ-ONLY, no install/remove)
-  speak          — text-to-speech (espeak/piper, non-blocking, graceful if missing)
+  packages       — query packages (cross-platform: apt/brew, READ-ONLY)
+  speak          — text-to-speech (cross-platform: say/espeak/piper, non-blocking)
   tasks          — task manager (add/list/done/remove/clear, persists to tasks.json)
   backup         — backup files/dirs to ~/bolt_backups/ (timestamped, zip/tar, with restore)
   encrypt        — encrypt/decrypt files with Fernet or AES (key generation, password-based)
-  logs           — view/search/tail system and app logs (journalctl, syslog, dmesg, custom)
+  logs           — view/search/tail system and app logs (cross-platform)
   dns            — DNS lookups (A, AAAA, MX, NS, TXT, CNAME, reverse, all)
   hash           — hash strings/files (md5, sha1, sha256, sha512, verify)
   transform      — text transforms (upper, lower, title, reverse, base64 encode/decode, rot13, etc.)
   disk           — disk usage analysis (overview, per-path breakdown, largest files)
-  services       — systemd service status (list, check specific, active/failed/enabled queries)
+  services       — service status (cross-platform: systemd/launchd, READ-ONLY)
   ports          — port scanner (scan hosts, check specific ports, common port ranges)
-  uptime         — system uptime, load averages, boot time
+  uptime         — system uptime, load averages, boot time (cross-platform)
   env            — environment info (env vars, PATH, python/node/go versions, shell)
   remind         — simple reminders with daemon thread (set, list, cancel)
   qr             — generate QR codes (text/URL to terminal ASCII or PNG file)
@@ -135,11 +140,11 @@ Custom tool format (files in custom_tools/):
   calendar       — event/schedule system (add, today, week, month, list, remove, search)
   download       — file downloader (URL to ~/Downloads/, 500MB limit, progress)
   image          — image manipulation (info, resize, convert, thumbnail, strip EXIF)
-  bluetooth      — Bluetooth device info (status, devices, scan, info, connected). READ-ONLY.
+  bluetooth      — Bluetooth device info (cross-platform: bluetoothctl/system_profiler). READ-ONLY.
 Prefer these custom tools over raw shell commands when possible.
 
-User's home: /home/mobilenode/
-Hardware: ROG Ally X, AMD Z1 Extreme, 20GB usable RAM
+User's home: {user_home}
+Hardware: {hardware_info}
 === END SELF-MAP ===
 
 {user_profile}
@@ -525,7 +530,16 @@ Answer:"""
 def _localize(s):
     return s.replace("/home/mobilenode/bolt/", _BOLT_DIR + "/").replace("/home/mobilenode/", _HOME_DIR + "/")
 
-BOLT_IDENTITY = _localize(BOLT_IDENTITY)
+def _inject_hardware(s):
+    """Inject dynamic hardware info and home dir into identity strings."""
+    try:
+        from env import detect_hardware_string
+        hw = detect_hardware_string()
+    except Exception:
+        hw = "unknown hardware"
+    return s.replace("{user_home}", _HOME_DIR + "/").replace("{hardware_info}", hw)
+
+BOLT_IDENTITY = _inject_hardware(_localize(BOLT_IDENTITY))
 COMPANION_CONTEXT = _localize(COMPANION_CONTEXT)
 CODE_CONTEXT = _localize(CODE_CONTEXT)
 SPEC_PROMPT = _localize(SPEC_PROMPT)

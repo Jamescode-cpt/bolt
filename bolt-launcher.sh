@@ -1,22 +1,36 @@
 #!/usr/bin/env bash
 # BOLT Desktop Launcher — starts BOLT web UI and opens the browser.
-# Used by the .desktop file so Joe Soap just clicks an icon.
+# Cross-platform: Linux + macOS. Used by .desktop file or app shortcut.
 set -u
 
-# Default BOLT_DIR to wherever this script lives (set by the installer)
+# Default BOLT_DIR to wherever this script lives
 BOLT_DIR="${BOLT_DIR:-$(cd "$(dirname "$0")" && pwd)}"
 PIDFILE="$HOME/.bolt.pid"
 DEFAULT_PORT=3080
 
+# ─── Platform detection ───
+IS_MAC=false
+[[ "$(uname)" == "Darwin" ]] && IS_MAC=true
+
 # ─── Helpers ───
 
 notify() {
-    # Desktop notification (silent fail if not available)
-    notify-send "BOLT" "$1" 2>/dev/null || true
+    if $IS_MAC; then
+        osascript -e "display notification \"$1\" with title \"BOLT\"" 2>/dev/null || true
+    else
+        notify-send "BOLT" "$1" 2>/dev/null || true
+    fi
 }
 
 is_port_free() {
-    ! ss -tlnp 2>/dev/null | grep -q ":$1 " 2>/dev/null
+    if command -v ss &>/dev/null; then
+        ! ss -tlnp 2>/dev/null | grep -q ":$1 " 2>/dev/null
+    elif command -v lsof &>/dev/null; then
+        ! lsof -iTCP:"$1" -sTCP:LISTEN 2>/dev/null | grep -q LISTEN
+    else
+        # Can't check — assume free
+        return 0
+    fi
 }
 
 find_free_port() {
@@ -24,7 +38,7 @@ find_free_port() {
     while ! is_port_free "$port"; do
         port=$((port + 1))
         if [ "$port" -gt 3100 ]; then
-            echo "$DEFAULT_PORT"  # give up, let Flask handle the error
+            echo "$DEFAULT_PORT"
             return
         fi
     done
@@ -46,7 +60,11 @@ wait_for_server() {
 
 open_browser() {
     local url="$1"
-    # Force a NEW visible window — xdg-open often just opens a background tab
+    if $IS_MAC; then
+        open "$url" 2>/dev/null
+        return 0
+    fi
+    # Linux: try named browsers for a new window, then xdg-open
     if command -v firefox &>/dev/null; then
         nohup firefox --new-window "$url" &>/dev/null &
         return 0
@@ -60,7 +78,6 @@ open_browser() {
         nohup chromium --new-window "$url" &>/dev/null &
         return 0
     fi
-    # Fallback
     xdg-open "$url" 2>/dev/null || true
 }
 
@@ -69,7 +86,6 @@ open_browser() {
 if [ -f "$PIDFILE" ]; then
     OLD_PID=$(cat "$PIDFILE" 2>/dev/null || true)
     if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
-        # BOLT is already running — open browser with saved URL
         if [ -f "$HOME/.bolt-url" ]; then
             BOLT_URL=$(tr -d '[:space:]' < "$HOME/.bolt-url")
         else
@@ -81,24 +97,26 @@ if [ -f "$PIDFILE" ]; then
     rm -f "$PIDFILE"
 fi
 
-# ─── Ensure Ollama is running ───
+# ─── Ensure Ollama is running (skip if using MLX-only) ───
 
 if ! curl -sf http://localhost:11434/api/tags &>/dev/null; then
     if command -v ollama &>/dev/null; then
-        nohup ollama serve &>/dev/null &
-        # Wait for Ollama
+        if $IS_MAC; then
+            # macOS: ollama may be an app, try opening it
+            open -a Ollama 2>/dev/null || nohup ollama serve &>/dev/null &
+        else
+            nohup ollama serve &>/dev/null &
+        fi
         tries=0
         while ! curl -sf http://localhost:11434/api/tags &>/dev/null; do
             sleep 1
             tries=$((tries + 1))
             if [ $tries -ge 15 ]; then
-                notify "Could not start Ollama. Please start it manually."
-                exit 1
+                # Not fatal if MLX is available
+                notify "Ollama not responding. BOLT will try MLX or local fallback."
+                break
             fi
         done
-    else
-        notify "Ollama not found. Please install it first."
-        exit 1
     fi
 fi
 
@@ -118,9 +136,7 @@ echo "$BOLT_PID" > "$PIDFILE"
 URL_FILE="$HOME/.bolt-url"
 
 if wait_for_server "http://localhost:$PORT/api/health"; then
-    # Give server a moment to write the URL file
     sleep 1
-    # Read the full URL with token from the file the server writes
     if [ -f "$URL_FILE" ]; then
         BOLT_URL=$(tr -d '[:space:]' < "$URL_FILE")
     else

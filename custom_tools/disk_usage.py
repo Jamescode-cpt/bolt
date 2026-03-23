@@ -1,8 +1,15 @@
-"""BOLT custom tool: disk usage overview, directory sizing, and large file finder."""
+"""BOLT custom tool: disk usage overview, directory sizing, and large file finder.
+
+Cross-platform: Linux (df --output) and macOS (df -h).
+"""
 
 import os
 import shutil
 import subprocess
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+from platform_utils import get_df_output
 
 TOOL_NAME = "disk"
 TOOL_DESC = (
@@ -16,7 +23,6 @@ ALLOWED_ROOT = os.path.expanduser("~") + "/"
 
 
 def _safe_path(path):
-    """Resolve and validate that a path lives under the allowed root."""
     resolved = os.path.realpath(os.path.expanduser(path))
     if not resolved.startswith(ALLOWED_ROOT):
         raise PermissionError(f"Access denied: path must be under {ALLOWED_ROOT}")
@@ -24,7 +30,6 @@ def _safe_path(path):
 
 
 def _human_size(nbytes):
-    """Convert bytes to a human-readable string."""
     for unit in ("B", "KB", "MB", "GB", "TB"):
         if abs(nbytes) < 1024.0:
             return f"{nbytes:.1f} {unit}"
@@ -33,36 +38,28 @@ def _human_size(nbytes):
 
 
 def _overview():
-    """Show disk usage for all mounted filesystems (like df -h)."""
-    try:
-        result = subprocess.run(
-            ["df", "-h", "--output=source,fstype,size,used,avail,pcent,target"],
-            capture_output=True, text=True, timeout=10
-        )
-        if result.returncode != 0:
-            return f"Error running df: {result.stderr.strip()}"
-        return result.stdout.strip()
-    except FileNotFoundError:
-        # Fallback: use shutil for just the root and home partitions
-        lines = ["Filesystem overview (fallback mode):"]
-        for mount in ["/", "/home"]:
-            try:
-                usage = shutil.disk_usage(mount)
-                lines.append(
-                    f"  {mount}: total={_human_size(usage.total)}  "
-                    f"used={_human_size(usage.used)}  "
-                    f"free={_human_size(usage.free)}  "
-                    f"({usage.used * 100 // usage.total}%)"
-                )
-            except OSError:
-                pass
-        return "\n".join(lines)
-    except subprocess.TimeoutExpired:
-        return "Error: df command timed out."
+    """Show disk usage for all mounted filesystems."""
+    output = get_df_output()
+    if output:
+        return output
+
+    # Final fallback: use shutil
+    lines = ["Filesystem overview (fallback mode):"]
+    for mount in ["/", os.path.expanduser("~")]:
+        try:
+            usage = shutil.disk_usage(mount)
+            lines.append(
+                f"  {mount}: total={_human_size(usage.total)}  "
+                f"used={_human_size(usage.used)}  "
+                f"free={_human_size(usage.free)}  "
+                f"({usage.used * 100 // usage.total}%)"
+            )
+        except OSError:
+            pass
+    return "\n".join(lines)
 
 
 def _usage(path):
-    """Show the total size of a directory tree using du."""
     try:
         safe = _safe_path(path)
     except PermissionError as e:
@@ -77,14 +74,12 @@ def _usage(path):
             capture_output=True, text=True, timeout=30
         )
         if result.returncode != 0:
-            # du may emit warnings on permission errors; still show stdout
             output = result.stdout.strip()
             if output:
                 return output + "\n(some paths may have been inaccessible)"
             return f"Error running du: {result.stderr.strip()}"
         return result.stdout.strip()
     except FileNotFoundError:
-        # Fallback: walk manually
         total = 0
         for dirpath, _dirnames, filenames in os.walk(safe):
             for f in filenames:
@@ -99,7 +94,6 @@ def _usage(path):
 
 
 def _largest(path):
-    """Find the top 10 largest files under a directory."""
     try:
         safe = _safe_path(path)
     except PermissionError as e:
@@ -138,7 +132,6 @@ def _largest(path):
 
 
 def run(args):
-    """Entry point called by BOLT tool loop."""
     args = (args or "").strip()
     if not args:
         return "Usage:\n" + TOOL_DESC

@@ -1,3 +1,9 @@
 requests
 flask
 qrcode
+pillow
+cryptography
+# Whisper STT (optional — web UI mic transcription)
+# faster-whisper
+# macOS Apple Silicon only (optional — installed by install.sh)
+# mlx-lm

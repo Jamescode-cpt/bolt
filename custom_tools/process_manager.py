@@ -1,12 +1,13 @@
 """BOLT custom tool — process manager.
 
-Lists top processes by CPU/memory via /proc reads.
+Lists top processes by CPU/memory. Cross-platform: Linux (/proc) and macOS (ps).
 Can kill processes by PID (with safety checks).
 Won't kill PID 1, root-owned procs, or BOLT itself.
 """
 
 import os
 import signal
+import sys
 
 TOOL_NAME = "processes"
 TOOL_DESC = (
@@ -19,118 +20,13 @@ TOOL_DESC = (
 MY_PID = os.getpid()
 MY_PPID = os.getppid()
 
-
-def _get_clk_tck():
-    """Get clock ticks per second."""
-    try:
-        return os.sysconf("SC_CLK_TCK")
-    except Exception:
-        return 100
-
-
-def _read_file(path):
-    try:
-        with open(path, "r") as f:
-            return f.read()
-    except Exception:
-        return None
-
-
-def _get_uptime():
-    raw = _read_file("/proc/uptime")
-    if raw:
-        return float(raw.split()[0])
-    return 0
-
-
-def _get_total_mem():
-    raw = _read_file("/proc/meminfo")
-    if raw:
-        for line in raw.splitlines():
-            if line.startswith("MemTotal:"):
-                return int(line.split()[1])  # kB
-    return 1
-
-
-def _list_procs():
-    """Read all processes from /proc."""
-    clk = _get_clk_tck()
-    uptime = _get_uptime()
-    total_mem = _get_total_mem()
-    procs = []
-
-    for entry in os.listdir("/proc"):
-        if not entry.isdigit():
-            continue
-        pid = int(entry)
-        base = f"/proc/{pid}"
-
-        # Read comm (process name)
-        comm = _read_file(f"{base}/comm")
-        if comm is None:
-            continue
-        comm = comm.strip()
-
-        # Read stat for CPU info
-        stat_raw = _read_file(f"{base}/stat")
-        if not stat_raw:
-            continue
-
-        # Parse stat — fields are space-separated, but comm can contain spaces/parens
-        # Find the closing paren to skip the comm field
-        close_paren = stat_raw.rfind(")")
-        if close_paren < 0:
-            continue
-        fields_after = stat_raw[close_paren + 2:].split()
-        if len(fields_after) < 20:
-            continue
-
-        try:
-            utime = int(fields_after[11])   # field 14 (0-indexed from after comm)
-            stime = int(fields_after[12])   # field 15
-            starttime = int(fields_after[19])  # field 22
-        except (IndexError, ValueError):
-            continue
-
-        total_time = utime + stime
-        proc_uptime = uptime - (starttime / clk)
-        cpu_pct = (total_time / clk / proc_uptime * 100) if proc_uptime > 0 else 0
-
-        # Read status for memory + UID
-        status_raw = _read_file(f"{base}/status")
-        rss_kb = 0
-        uid = -1
-        if status_raw:
-            for line in status_raw.splitlines():
-                if line.startswith("VmRSS:"):
-                    try:
-                        rss_kb = int(line.split()[1])
-                    except (IndexError, ValueError):
-                        pass
-                elif line.startswith("Uid:"):
-                    try:
-                        uid = int(line.split()[1])
-                    except (IndexError, ValueError):
-                        pass
-
-        mem_pct = (rss_kb / total_mem * 100) if total_mem > 0 else 0
-
-        procs.append({
-            "pid": pid,
-            "name": comm,
-            "cpu": cpu_pct,
-            "mem_pct": mem_pct,
-            "rss_kb": rss_kb,
-            "uid": uid,
-        })
-
-    return procs
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+from platform_utils import get_process_list, IS_LINUX
 
 
 def _format_top(count=15):
     """Format top processes by CPU usage."""
-    procs = _list_procs()
-    # Sort by CPU descending, then memory
+    procs = get_process_list()
     procs.sort(key=lambda p: (p["cpu"], p["mem_pct"]), reverse=True)
     top = procs[:count]
 
@@ -154,28 +50,49 @@ def _kill_proc(pid_str):
     except ValueError:
         return f"Invalid PID: {pid_str}"
 
-    # Safety checks
     if pid <= 1:
         return "Refused: cannot kill PID 0 or 1 (kernel/init)"
 
     if pid == MY_PID or pid == MY_PPID:
         return "Refused: cannot kill BOLT's own process"
 
-    # Check if it's a root process
-    status = _read_file(f"/proc/{pid}/status")
-    if status is None:
-        return f"Process {pid} not found (already dead?)"
-
-    uid = -1
+    # Check process ownership
     name = "unknown"
-    for line in status.splitlines():
-        if line.startswith("Uid:"):
-            try:
-                uid = int(line.split()[1])
-            except (IndexError, ValueError):
-                pass
-        elif line.startswith("Name:"):
-            name = line.split(":", 1)[1].strip()
+    uid = -1
+
+    if IS_LINUX:
+        try:
+            with open(f"/proc/{pid}/status") as f:
+                status = f.read()
+            for line in status.splitlines():
+                if line.startswith("Uid:"):
+                    uid = int(line.split()[1])
+                elif line.startswith("Name:"):
+                    name = line.split(":", 1)[1].strip()
+        except FileNotFoundError:
+            return f"Process {pid} not found (already dead?)"
+        except Exception:
+            pass
+    else:
+        # macOS: check via ps
+        import subprocess
+        try:
+            out = subprocess.check_output(
+                ["ps", "-p", str(pid), "-o", "user,comm"],
+                text=True, timeout=5,
+            )
+            lines = out.strip().splitlines()
+            if len(lines) > 1:
+                parts = lines[1].split(None, 1)
+                if parts[0] == "root":
+                    uid = 0
+                name = os.path.basename(parts[1]) if len(parts) > 1 else "unknown"
+            else:
+                return f"Process {pid} not found (already dead?)"
+        except subprocess.CalledProcessError:
+            return f"Process {pid} not found (already dead?)"
+        except Exception:
+            pass
 
     if uid == 0:
         return f"Refused: PID {pid} ({name}) is owned by root. Use shell with sudo if you really need this."
@@ -214,7 +131,6 @@ def run(args):
                     pass
             return _format_top(count)
         else:
-            # Default to top
             return _format_top()
     except Exception as e:
         return f"processes error: {e}"

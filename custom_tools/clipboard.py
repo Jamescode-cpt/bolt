@@ -1,11 +1,12 @@
 """BOLT custom tool — read/write system clipboard.
 
-Tries: wl-paste/wl-copy (Wayland) > xclip > xsel (X11).
-Returns install instructions if none are found.
+Cross-platform: macOS (pbcopy/pbpaste), Linux (wl-clipboard, xclip, xsel).
 """
 
+import os
 import subprocess
 import shutil
+import sys
 
 TOOL_NAME = "clipboard"
 TOOL_DESC = (
@@ -14,19 +15,15 @@ TOOL_DESC = (
     '<tool name="clipboard">write\ntext to copy</tool>'
 )
 
-# Clipboard backends: (read_cmd, write_cmd, description)
-BACKENDS = [
-    (["wl-paste"], ["wl-copy"], "wl-clipboard (Wayland)"),
-    (["xclip", "-selection", "clipboard", "-o"], ["xclip", "-selection", "clipboard", "-i"], "xclip"),
-    (["xsel", "--clipboard", "--output"], ["xsel", "--clipboard", "--input"], "xsel"),
-]
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+from platform_utils import get_clipboard_backends, IS_MAC
 
-MAX_CLIPBOARD = 10000  # Max chars to read/write
+MAX_CLIPBOARD = 10000
 
 
 def _find_backend():
     """Find the first available clipboard backend."""
-    for read_cmd, write_cmd, desc in BACKENDS:
+    for read_cmd, write_cmd, desc in get_clipboard_backends():
         if shutil.which(read_cmd[0]):
             return read_cmd, write_cmd, desc
     return None, None, None
@@ -90,17 +87,16 @@ def run(args):
 
     read_cmd, write_cmd, desc = _find_backend()
     if read_cmd is None:
+        if IS_MAC:
+            return "pbcopy/pbpaste not found — these should be built-in on macOS."
         return (
             "No clipboard tool found. Install one of these:\n\n"
-            "  Wayland (recommended for ROG Ally X):\n"
-            "    sudo pacman -S wl-clipboard    # Arch/SteamOS\n"
-            "    sudo apt install wl-clipboard   # Debian/Ubuntu\n\n"
+            "  Wayland:\n"
+            "    sudo apt install wl-clipboard   # Debian/Ubuntu\n"
+            "    sudo pacman -S wl-clipboard     # Arch/SteamOS\n\n"
             "  X11:\n"
-            "    sudo pacman -S xclip\n"
-            "    sudo apt install xclip\n\n"
-            "  Alternative:\n"
-            "    sudo pacman -S xsel\n"
-            "    sudo apt install xsel"
+            "    sudo apt install xclip\n"
+            "    sudo pacman -S xclip"
         )
 
     try:
@@ -113,7 +109,6 @@ def run(args):
             text = lines[1] if len(lines) > 1 else ""
             return _write_clipboard(text, write_cmd, desc)
         else:
-            # Treat the whole thing as text to copy
             return _write_clipboard(raw, write_cmd, desc)
 
     except Exception as e:

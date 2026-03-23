@@ -6,6 +6,7 @@ Auto-detects hardware. All values overridable via environment variables.
 import os
 import subprocess
 import re
+import platform
 
 # ─── Paths ───
 
@@ -58,7 +59,26 @@ def detect_cpu_cores():
 
 def detect_gpu():
     """Detect GPU info. Returns a dict with 'name' and 'vram_gb' or None."""
-    # Try nvidia-smi
+    # macOS: use system_profiler
+    if platform.system() == "Darwin":
+        try:
+            out = subprocess.check_output(
+                ["system_profiler", "SPDisplaysDataType"],
+                text=True, timeout=10,
+            )
+            for line in out.splitlines():
+                line = line.strip()
+                if "Chipset Model:" in line or "Chip:" in line:
+                    name = line.split(":", 1)[1].strip()
+                    return {"name": name, "vram_gb": 0}
+        except Exception:
+            pass
+        # Apple Silicon shares system RAM
+        if platform.machine() == "arm64":
+            return {"name": "Apple Silicon (integrated GPU)", "vram_gb": 0}
+        return None
+
+    # Linux: Try nvidia-smi
     try:
         out = subprocess.check_output(
             ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
